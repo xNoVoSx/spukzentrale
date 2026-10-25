@@ -1,12 +1,19 @@
-// Prüft den ADPCM-Dekoder der Sound-Firmware gegen ffmpeg (siehe adpcm_test.sh).
-// Aufruf: adpcm_vergleich <datei.wav> <referenz.s16le>
+// Prüft den ADPCM-Dekoder der Sound-Firmware (siehe adpcm_test.sh).
+// Aufruf: adpcm_vergleich <datei.wav> <referenz.s16le> [min_snr_db]
+//   ohne min_snr_db: bit-genau, z. B. gegen die Referenz nach IMA-Spezifikation
+//   mit min_snr_db: Abweichung muss so weit unter dem Signal liegen, z. B. gegen ffmpeg
+//   (ältere ffmpeg-Versionen rechnen IMA mit einer anderen Rundung)
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "../src/adpcm.h"
 
 int main(int argc, char** argv) {
-  if (argc != 3) return 2;
+  if (argc != 3 && argc != 4) return 2;
+  const double minSnr = argc == 4 ? atof(argv[3]) : 0;
   FILE* f = fopen(argv[1], "rb");
   FILE* r = fopen(argv[2], "rb");
   if (!f || !r) return 2;
@@ -33,17 +40,33 @@ int main(int argc, char** argv) {
     alle.insert(alle.end(), pcm.begin(), pcm.begin() + n);
   }
   if (alle.size() > info.samples) alle.resize(info.samples);
-  // ffmpeg dekodiert bis zum Blockende (inkl. Auffüllung), wir nur bis zur Länge aus dem fact-Chunk
+  // die Referenz darf bis zum Blockende gehen (ffmpeg dekodiert die Auffüllung mit),
+  // wir dekodieren nur bis zur Länge aus dem fact-Chunk
   if (alle.size() != info.samples || ref.size() < alle.size() || ref.size() - alle.size() >= info.samplesProBlock) {
     printf("FEHLER: %zu Samples (fact: %u), ffmpeg liefert %zu\n", alle.size(), info.samples, ref.size());
     return 1;
   }
-  for (size_t i = 0; i < alle.size(); i++)
-    if (alle[i] != ref[i]) {
-      printf("FEHLER: Sample %zu: %d statt %d\n", i, alle[i], ref[i]);
-      return 1;
-    }
-  printf("OK: %zu Samples, %u Hz, Block %u Bytes – identisch mit ffmpeg\n", alle.size(), info.abtastrate,
-         info.blockAlign);
+  if (minSnr == 0) {
+    for (size_t i = 0; i < alle.size(); i++)
+      if (alle[i] != ref[i]) {
+        printf("FEHLER: Sample %zu: %d statt %d\n", i, alle[i], ref[i]);
+        return 1;
+      }
+    printf("OK: %zu Samples, %u Hz, Block %u Bytes – bit-genau wie die Referenz\n", alle.size(), info.abtastrate,
+           info.blockAlign);
+    return 0;
+  }
+  double signal = 0, fehlerQ = 0;
+  for (size_t i = 0; i < alle.size(); i++) {
+    double d = (double)alle[i] - ref[i];
+    signal += (double)ref[i] * ref[i];
+    fehlerQ += d * d;
+  }
+  double snr = fehlerQ > 0 ? 10 * log10(signal / fehlerQ) : 999;
+  if (snr < minSnr) {
+    printf("FEHLER: Abstand zu ffmpeg nur %.1f dB (mindestens %.0f dB)\n", snr, minSnr);
+    return 1;
+  }
+  printf("OK: passt zu ffmpeg (Abweichung %s)\n", fehlerQ > 0 ? (std::to_string((int)snr) + " dB unter dem Signal").c_str() : "keine");
   return 0;
 }
