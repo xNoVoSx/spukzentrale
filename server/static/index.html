@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0a12">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Spukzentrale</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="stil.css">
+</head>
+<body>
+  <header class="kopf">
+    <h1>Spukzentrale</h1>
+    <div class="geraete-punkte" id="geraete-punkte" title="Gerätestatus"></div>
+  </header>
+
+  <div class="getrennt" id="getrennt" hidden>Verbindung zum Server unterbrochen – verbinde neu …</div>
+
+  <main>
+    <section class="seite" id="seite-show"></section>
+    <section class="seite" id="seite-licht" hidden></section>
+    <section class="seite" id="seite-sounds" hidden></section>
+    <section class="seite" id="seite-szenen" hidden></section>
+    <section class="seite" id="seite-einstellungen" hidden></section>
+  </main>
+
+  <nav class="reiter" id="reiter">
+    <button data-seite="show" class="aktiv"><span>🎃</span>Show</button>
+    <button data-seite="licht"><span>💡</span>Licht</button>
+    <button data-seite="sounds"><span>🔊</span>Sounds</button>
+    <button data-seite="szenen"><span>🎬</span>Szenen</button>
+    <button data-seite="einstellungen"><span>⚙️</span>Einstellungen</button>
+  </nav>
+
+  <dialog id="dialog"><form method="dialog" id="dialog-inhalt"></form></dialog>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

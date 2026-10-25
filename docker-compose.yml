@@ -1,0 +1,19 @@
+# Spukzentrale – Stack für Portainer (Git-Repository-Stack, Compose-Pfad: docker-compose.yml)
+#
+# Umgebungsvariablen in Portainer setzen (siehe README):
+#   SPUK_CONFIG_PFAD  Einstellungen, Szenen, Playlist (Standard: /docker/spukzentrale)
+#   SPUK_MEDIEN_PFAD  Musik und Effekt-Sounds        (Standard: /docker/spukzentrale/medien)
+#   SPUK_PORT         Port der Weboberfläche          (Standard: 8095)
+#   SPUK_TAG          Image-Version, z. B. 1.0.0      (Standard: latest)
+services:
+  spukzentrale:
+    image: ghcr.io/xnovosx/spukzentrale:${SPUK_TAG:-latest}
+    container_name: spukzentrale
+    restart: unless-stopped
+    ports:
+      - "${SPUK_PORT:-8095}:8095"
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - ${SPUK_CONFIG_PFAD:-/docker/spukzentrale}:/data/config
+      - ${SPUK_MEDIEN_PFAD:-/docker/spukzentrale/medien}:/data/medien

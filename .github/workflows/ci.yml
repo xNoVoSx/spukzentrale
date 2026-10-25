@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    name: Firmware ${{ matrix.geraet }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        geraet: [licht, sound]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.geraet }}-${{ hashFiles(format('firmware/{0}/platformio.ini', matrix.geraet)) }}
+      - run: pip install platformio
+      - run: pio run -d firmware/${{ matrix.geraet }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: firmware-${{ matrix.geraet }}
+          path: |
+            firmware/${{ matrix.geraet }}/.pio/build/*/firmware.bin
+            firmware/${{ matrix.geraet }}/.pio/build/*/firmware.factory.bin
+
+  firmware-tests:
+    name: Firmware-Tests (PC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg g++
+      - run: bash firmware/licht/test/effekte_test.sh
+      - run: bash firmware/sound/test/adpcm_test.sh
+      - run: bash firmware/sound/test/chunked_test.sh
+
+  server-tests:
+    name: Server-Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: server/requirements*.txt
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pip install -r server/requirements-dev.txt
+      - run: python -m pytest -q
+        working-directory: server
+
+  docker:
+    name: Docker-Image
+    runs-on: ubuntu-latest
+    needs: [server-tests]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/xnovosx/spukzentrale
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=sha,format=short
+      - name: Bauen (zum Testen)
+        uses: docker/build-push-action@v7
+        with:
+          context: server
+          load: true
+          tags: spukzentrale:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container starten und prüfen
+        run: |
+          docker run -d --name spuk -p 8095:8095 spukzentrale:test
+          for i in $(seq 1 30); do
+            if curl -sf localhost:8095/api/status > status.json; then break; fi
+            sleep 1
+          done
+          docker logs spuk
+          python3 -c "import json; d=json.load(open('status.json')); assert d['version']; assert any(f['kategorie']=='system' for f in d['medien']['fx']); print('ok', d['version'])"
+          curl -sf localhost:8095/ | grep -q Spukzentrale
+      - name: Anmelden bei GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Veröffentlichen
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: server
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha

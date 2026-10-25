@@ -1,0 +1,15 @@
+# Zugangsdaten
+config.h
+
+# PlatformIO
+.pio/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Daten (lokale Tests)
+/data/

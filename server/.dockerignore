@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+werkzeuge/
+requirements-dev.txt
+pytest.ini

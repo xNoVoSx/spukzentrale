@@ -1,0 +1,525 @@
+"""Die Zentrale: hält den Zustand und verbindet Oberfläche, Geräte, Szenen und Automatik.
+
+Alle Bedienwege (Weboberfläche, REST, MQTT, Home Assistant, Zeitplan, Ereignis-Generator)
+rufen die Methoden hier auf. Änderungen gehen an die Geräte und per WebSocket an alle
+offenen Oberflächen.
+"""
+
+import asyncio
+import collections
+import json
+import logging
+import random
+import time
+from collections.abc import Callable
+from typing import Any
+
+from fastapi import WebSocket
+
+from . import VERSION, pfade
+from .ambiente import Ambiente
+from .geraete import Geraet, Geraete
+from .licht import EspLicht, LichtAusgang
+from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
+from .modelle import (
+    GEHEIM_PLATZHALTER, GEHEIME_FELDER, KATEGORIEN, AKTIONEN, EFFEKTE, Effekt, Einstellungen, Ereignisse,
+    LichtAktion, LichtZustand, Regel, Stimmung, Stimmungen, Szene, Szenen, TonEinst, Zone, Zustand,
+)
+from .speicher import lade, speichere
+from . import vorgaben
+
+log = logging.getLogger(__name__)
+
+# Ersatz, wenn kein Ton läuft: Aktionen, die der Effekt-Lautstärke folgen, hätten sonst nichts zu tun
+OHNE_TON = {"env_blitz": "blitz", "env_puls": "puls"}
+
+
+class Zentrale:
+    def __init__(self) -> None:
+        pfade.anlegen()
+        self.einst: Einstellungen = lade(pfade.CONFIG / "einstellungen.json", Einstellungen)
+        self.zustand: Zustand = lade(pfade.CONFIG / "zustand.json", Zustand)
+        self.stimmungen: Stimmungen = lade(pfade.CONFIG / "stimmungen.json", Stimmungen)
+        self.szenen: Szenen = lade(pfade.CONFIG / "szenen.json", Szenen)
+        self.ereignisse: Ereignisse = lade(pfade.CONFIG / "ereignisse.json", Ereignisse)
+        self._vorgaben_ergaenzen()
+        self._zonen_anpassen()
+
+        self.medien = MedienVerwaltung()
+        self.geraete = Geraete()
+        self.licht: LichtAusgang = EspLicht(self.geraete)
+        self.ambiente = Ambiente(self.medien, bei_wechsel=lambda _: self._zustand_geaendert())
+
+        self.ui: set[WebSocket] = set()
+        self.protokoll: collections.deque[dict] = collections.deque(maxlen=60)
+        self.overlay: Stimmung | None = None     # kurzzeitige Stimmung aus einer Szene
+        self.ruhezeit_aktiv = False
+        self.show_fenster: dict[str, Any] = {}    # vom Zeitplan: nächster Start/Ende
+        self.ha_status = "aus"
+        self.mqtt_status = "aus"
+        self._letzter_fx_sync = 0.0
+        self._zuletzt_gespielt: dict[str, str] = {}
+        self.beobachter: list[Callable[[str], None]] = []  # z. B. MQTT: bei Änderungen benachrichtigen
+
+        # werden in main.py gesetzt (brauchen die Zentrale selbst)
+        self.spieler = None    # ablauf.SzenenSpieler
+        self.generator = None  # ereignisse.Generator
+
+    # ------------------------------------------------------------------
+    # Laden / Speichern
+    # ------------------------------------------------------------------
+    def _vorgaben_ergaenzen(self) -> None:
+        """Eingebaute Stimmungen/Szenen/Regeln anlegen, wenn sie (noch) fehlen."""
+        if not self.stimmungen.liste:
+            self.stimmungen.liste = [s.model_copy(deep=True) for s in vorgaben.STIMMUNGEN]
+            speichere(pfade.CONFIG / "stimmungen.json", self.stimmungen)
+        if not self.szenen.liste:
+            self.szenen.liste = [s.model_copy(deep=True) for s in vorgaben.SZENEN]
+            speichere(pfade.CONFIG / "szenen.json", self.szenen)
+        if not self.ereignisse.regeln:
+            self.ereignisse.regeln = [r.model_copy(deep=True) for r in vorgaben.REGELN]
+            speichere(pfade.CONFIG / "ereignisse.json", self.ereignisse)
+
+    def _zonen_anpassen(self) -> None:
+        n = self.einst.licht.zonen
+        z = self.zustand.licht.zonen
+        while len(z) < n:
+            z.append(z[-1].model_copy() if z else Zone())
+        del z[n:]
+
+    def speichern(self, *was: str) -> None:
+        dateien = {
+            "einst": ("einstellungen.json", self.einst),
+            "zustand": ("zustand.json", self.zustand),
+            "stimmungen": ("stimmungen.json", self.stimmungen),
+            "szenen": ("szenen.json", self.szenen),
+            "ereignisse": ("ereignisse.json", self.ereignisse),
+        }
+        for w in was:
+            name, modell = dateien[w]
+            speichere(pfade.CONFIG / name, modell)
+
+    # ------------------------------------------------------------------
+    # Abgeleitete Werte
+    # ------------------------------------------------------------------
+    def licht_effektiv(self) -> LichtZustand:
+        z = self.zustand.licht.model_copy(deep=True)
+        if self.overlay:
+            n = len(z.zonen)
+            z.zonen = [self.overlay.zonen[i % len(self.overlay.zonen)].model_copy() for i in range(n)]
+            z.musik_reaktiv = self.overlay.musik_reaktiv
+        return z
+
+    def ton_effektiv(self) -> TonEinst:
+        t = self.einst.ton.model_copy()
+        if self.ruhezeit_aktiv:
+            if self.einst.ruhezeit.modus == "stumm":
+                t.master = 0
+            else:
+                t.master = min(t.master, self.einst.ruhezeit.lautst)
+        return t
+
+    @property
+    def stumm(self) -> bool:
+        return self.ruhezeit_aktiv and self.einst.ruhezeit.modus == "stumm"
+
+    def fx_kapazitaet_kb(self) -> int:
+        g = self.geraete.get("sound")
+        gesamt = (g.hallo.get("fx_gesamt_kb") if g else None) or FX_KAPAZITAET_STANDARD_KB
+        return max(0, int(gesamt) - FX_RESERVE_KB)
+
+    # ------------------------------------------------------------------
+    # Oberfläche
+    # ------------------------------------------------------------------
+    def einstellungen_oeffentlich(self) -> dict:
+        d = self.einst.model_dump()
+        for teil, feld in GEHEIME_FELDER:
+            if d[teil][feld]:
+                d[teil][feld] = GEHEIM_PLATZHALTER
+        return d
+
+    def zustand_info(self) -> dict:
+        spieler = self.spieler
+        return {
+            "zustand": self.zustand.model_dump(),
+            "licht_effektiv": self.licht_effektiv().model_dump(),
+            "overlay": self.overlay.name if self.overlay else None,
+            "szene": spieler.laufend if spieler else None,
+            "ambiente_jetzt": self.ambiente.jetzt,
+            "ruhezeit": self.ruhezeit_aktiv,
+            "show_fenster": self.show_fenster,
+            "ton": self.ton_effektiv().model_dump(),
+            "ha": self.ha_status,
+            "mqtt": self.mqtt_status,
+        }
+
+    def medien_info(self) -> dict:
+        return {
+            "musik": [m.model_dump() for m in self.medien.daten.musik],
+            "playlist": self.medien.daten.playlist.model_dump(),
+            "fx": [f.model_dump() for f in self.medien.daten.fx],
+            "fx_belegt_kb": self.medien.fx_belegt_kb(),
+            "fx_kapazitaet_kb": self.fx_kapazitaet_kb(),
+        }
+
+    def alles(self) -> dict:
+        return {
+            "t": "alles",
+            "version": VERSION,
+            "effekte": EFFEKTE,
+            "aktionen": AKTIONEN,
+            "kategorien": KATEGORIEN,
+            **self.zustand_info(),
+            "geraete": self.geraete.info(),
+            "einstellungen": self.einstellungen_oeffentlich(),
+            "stimmungen": [s.model_dump() for s in self.stimmungen.liste],
+            "szenen": [s.model_dump() for s in self.szenen.liste],
+            "ereignisse": self.ereignisse.model_dump(),
+            "medien": self.medien_info(),
+            "protokoll": list(self.protokoll),
+        }
+
+    async def ui_anmelden(self, ws: WebSocket) -> None:
+        self.ui.add(ws)
+        await ws.send_text(json.dumps(self.alles()))
+        if len(self.ui) == 1:
+            await self.licht.vorschau(True)
+
+    async def ui_abmelden(self, ws: WebSocket) -> None:
+        self.ui.discard(ws)
+        if not self.ui:
+            await self.licht.vorschau(False)
+
+    def an_ui(self, nachricht: dict) -> None:
+        if not self.ui:
+            return
+        text = json.dumps(nachricht, separators=(",", ":"))
+        for ws in list(self.ui):
+            asyncio.create_task(self._ui_senden(ws, text))
+
+    async def _ui_senden(self, ws: WebSocket, text: str) -> None:
+        try:
+            await ws.send_text(text)
+        except Exception:
+            self.ui.discard(ws)
+
+    def _zustand_geaendert(self) -> None:
+        self.an_ui({"t": "zustand", **self.zustand_info()})
+        self._melden("zustand")
+
+    def daten_geaendert(self) -> None:
+        """Nach seltenen Änderungen (Einstellungen, Szenen, Medien ...): alles neu schicken."""
+        self.an_ui(self.alles())
+        self._melden("daten")
+
+    def _melden(self, art: str) -> None:
+        for b in self.beobachter:
+            try:
+                b(art)
+            except Exception:
+                log.exception("Beobachter")
+
+    def protokollieren(self, text: str, art: str = "info") -> None:
+        eintrag = {"zeit": time.time(), "text": text, "art": art}
+        self.protokoll.appendleft(eintrag)
+        log.info("%s", text)
+        self.an_ui({"t": "log", **eintrag})
+
+    # ------------------------------------------------------------------
+    # Geräte
+    # ------------------------------------------------------------------
+    async def geraet_verbunden(self, g: Geraet) -> None:
+        alt = self.geraete.anmelden(g)
+        if alt:
+            try:
+                await alt.ws.close()
+            except Exception:
+                pass
+        self.protokollieren(f"{'Licht' if g.rolle == 'licht' else 'Sound'}-ESP verbunden ({g.ip})", "geraet")
+        self.an_ui({"t": "geraete", "geraete": self.geraete.info()})
+        self._melden("geraete")
+
+    async def geraet_getrennt(self, g: Geraet) -> None:
+        if self.geraete.abmelden(g):
+            self.protokollieren(f"{'Licht' if g.rolle == 'licht' else 'Sound'}-ESP getrennt", "geraet")
+            self.an_ui({"t": "geraete", "geraete": self.geraete.info()})
+            self._melden("geraete")
+
+    async def geraet_nachricht(self, g: Geraet, msg: dict) -> None:
+        t = msg.get("t")
+        if t == "hallo":
+            g.hallo = msg
+            if g.rolle == "licht":
+                await self.licht.konfigurieren(self.einst.licht)
+                await self.licht.zustand(self.licht_effektiv(), temp=self.overlay is not None)
+                await self.licht.vorschau(bool(self.ui))
+            else:
+                await self.sound_konfigurieren()
+                await self.fx_sync()
+                if self.zustand.ambiente_an:
+                    await g.senden({"t": "musik", "aktion": "play", "pfad": "/stream/ambiente"})
+            self.an_ui({"t": "geraete", "geraete": self.geraete.info()})
+            if g.rolle == "sound":
+                self.an_ui({"t": "medien", **self.medien_info()})
+        elif t == "status":
+            g.status = {k: v for k, v in msg.items() if k != "t"}
+            self.an_ui({"t": "geraet_status", "rolle": g.rolle, "status": g.status})
+        elif t == "werte":
+            self.an_ui({"t": "werte", "v": msg.get("v", [])})
+        elif t == "fx_fehlt":
+            log.info("Sound-ESP kennt Effekt %s nicht – Abgleich", msg.get("id"))
+            if time.monotonic() - self._letzter_fx_sync > 10:
+                await self.fx_sync()
+        elif t == "fx_sync_fertig":
+            if msg.get("geladen") or msg.get("geloescht") or msg.get("fehler"):
+                text = f"Effekte auf dem Sound-ESP abgeglichen: {msg.get('geladen', 0)} geladen, {msg.get('geloescht', 0)} gelöscht"
+                if msg.get("fehler"):
+                    text += f", {msg['fehler']} Fehler ({msg.get('meldung', '')})"
+                self.protokollieren(text, "fehler" if msg.get("fehler") else "geraet")
+            g.hallo["fx_frei_kb"] = msg.get("fx_frei_kb", g.hallo.get("fx_frei_kb"))
+
+    async def sound_konfigurieren(self) -> None:
+        t = self.ton_effektiv()
+        await self.geraete.senden("sound", {"t": "config", **t.model_dump()})
+
+    async def fx_sync(self) -> None:
+        self._letzter_fx_sync = time.monotonic()
+        await self.geraete.senden("sound", {"t": "fx_sync", "basis": "/api/geraet/fx/", "liste": self.medien.fx_sync_liste()})
+
+    async def geraet_neustart(self, rolle: str) -> bool:
+        return await self.geraete.senden(rolle, {"t": "neustart"})
+
+    # ------------------------------------------------------------------
+    # Licht
+    # ------------------------------------------------------------------
+    async def _licht_senden(self) -> None:
+        await self.licht.zustand(self.licht_effektiv(), temp=self.overlay is not None)
+        self._zustand_geaendert()
+
+    async def licht_aendern(self, *, an: bool | None = None, hell: int | None = None,
+                            musik_reaktiv: int | None = None, zonen: list[Zone] | None = None) -> None:
+        z = self.zustand.licht
+        if an is not None:
+            z.an = an
+        if hell is not None:
+            z.hell = max(0, min(100, hell))
+        if musik_reaktiv is not None:
+            z.musik_reaktiv = max(0, min(100, musik_reaktiv))
+            self.zustand.stimmung_id = None
+        if zonen is not None:
+            z.zonen = [zz.model_copy() for zz in zonen[: self.einst.licht.zonen]]
+            self._zonen_anpassen()
+            self.zustand.stimmung_id = None
+            self.overlay = None  # Handbedienung hat Vorrang vor der Szene
+        self.speichern("zustand")
+        await self._licht_senden()
+
+    async def zone_setzen(self, i: int, zone: Zone) -> None:
+        if not 0 <= i < len(self.zustand.licht.zonen):
+            raise ValueError("Zone gibt es nicht")
+        zonen = list(self.zustand.licht.zonen)
+        zonen[i] = zone
+        await self.licht_aendern(zonen=zonen)
+
+    async def stimmung_anwenden(self, sid: str) -> Stimmung:
+        s = next((s for s in self.stimmungen.liste if s.id == sid), None)
+        if not s:
+            raise KeyError(sid)
+        n = self.einst.licht.zonen
+        self.zustand.licht.zonen = [s.zonen[i % len(s.zonen)].model_copy() for i in range(n)]
+        self.zustand.licht.musik_reaktiv = s.musik_reaktiv
+        self.zustand.stimmung_id = s.id
+        self.overlay = None
+        self.speichern("zustand")
+        await self._licht_senden()
+        return s
+
+    async def overlay_setzen(self, s: Stimmung | None) -> None:
+        self.overlay = s
+        await self._licht_senden()
+
+    async def aktion(self, a: LichtAktion, verz_ms: int = 0, dauer_ms: int | None = None, quelle: str = "") -> None:
+        dauer = dauer_ms if dauer_ms is not None else (a.dauer_ms or 1000)
+        await self.licht.aktion(a, verz_ms, dauer)
+        if quelle:
+            self.protokollieren(f"{quelle}: Licht „{a.name}“", "aktion")
+
+    async def alles_stoppen(self) -> None:
+        if self.spieler:
+            await self.spieler.stoppen()
+        await self.licht.stopp()
+        await self.geraete.senden("sound", {"t": "fx_stop"})
+        self.protokollieren("Alles gestoppt", "info")
+
+    # ------------------------------------------------------------------
+    # Sound
+    # ------------------------------------------------------------------
+    def fx_waehlen(self, kategorie: str) -> Effekt | None:
+        """Zufälliger Sound der Kategorie – nicht zweimal hintereinander derselbe."""
+        auswahl = self.medien.fx_der_kategorie(kategorie)
+        if not auswahl:
+            return None
+        if len(auswahl) > 1:
+            auswahl = [f for f in auswahl if f.id != self._zuletzt_gespielt.get(kategorie)] or auswahl
+        f = random.choice(auswahl)
+        self._zuletzt_gespielt[kategorie] = f.id
+        return f
+
+    async def fx_spielen(self, f: Effekt, vol: int = 100, licht: LichtAktion | None | str = "auto",
+                         quelle: str = "") -> None:
+        """Effekt-Sound mit passendem Licht.
+
+        Ist der Licht-ESP per Kabel mit dem Sound-ESP verbunden, geht die Licht-Aktion mit
+        dem Sound an den Sound-ESP und von dort im selben Moment wie der erste Ton per UART
+        weiter. Sonst schickt der Server sie direkt, um die Ausgabe-Latenz verzögert.
+        """
+        if licht == "auto":
+            licht = f.licht
+        elif licht == "keine":
+            licht = None
+        assert licht is None or isinstance(licht, LichtAktion)
+        if licht is not None and licht.name == "keine":
+            licht = None
+        dauer = (licht.dauer_ms if licht and licht.dauer_ms else f.dauer_ms + 300) if licht else 0
+
+        sound = self.geraete.get("sound")
+        mit_ton = sound is not None and not self.stumm
+        if mit_ton:
+            lg = self.geraete.get("licht")
+            per_kabel = bool(sound.status.get("uart")) and bool(lg and lg.status.get("uart"))
+            nachricht: dict[str, Any] = {"t": "fx", "id": f.id, "vol": round(f.vol * vol / 100)}
+            if licht and per_kabel:
+                nachricht["licht"] = {**licht.model_dump(), "dauer_ms": dauer}
+            await sound.senden(nachricht)
+            if licht and not per_kabel:
+                await self.licht.aktion(licht, self.ton_effektiv().latenz_ms, dauer)
+        elif licht:
+            ersatz = licht.model_copy(update={"name": OHNE_TON.get(licht.name, licht.name)})
+            await self.licht.aktion(ersatz, 0, dauer)
+        if quelle:
+            zusatz = "" if mit_ton else " (nur Licht)"
+            self.protokollieren(f"{quelle}: {f.name}{zusatz}", "fx")
+
+    async def fx_kategorie(self, kategorie: str, vol: int = 100, quelle: str = "") -> Effekt | None:
+        f = self.fx_waehlen(kategorie)
+        if f:
+            await self.fx_spielen(f, vol, quelle=quelle)
+        return f
+
+    async def latenz_test(self) -> None:
+        """Klick + kurzer Blitz auf allen Zonen: Latenz so einstellen, dass beides zusammenfällt."""
+        klick = next((f for f in self.medien.daten.fx if f.kategorie == "system"), None)
+        blitz = LichtAktion(name="alle_an", dauer_ms=150, staerke=100)
+        if klick:
+            await self.fx_spielen(klick, 100, blitz, quelle="Latenz-Test")
+        else:
+            await self.aktion(blitz, quelle="Latenz-Test")
+
+    async def ambiente_schalten(self, an: bool) -> None:
+        self.zustand.ambiente_an = an
+        self.speichern("zustand")
+        await self.geraete.senden("sound", {"t": "musik", "aktion": "play" if an else "stop", "pfad": "/stream/ambiente"})
+        self._zustand_geaendert()
+
+    async def ton_geaendert(self) -> None:
+        await self.sound_konfigurieren()
+        self._zustand_geaendert()
+
+    # ------------------------------------------------------------------
+    # Show, Automatik
+    # ------------------------------------------------------------------
+    async def show(self, an: bool, ambiente: bool = True, ereignisse: bool = True, quelle: str = "") -> None:
+        """Alles an/aus: Licht, Ambiente, Ereignisse."""
+        await self.licht_aendern(an=an)
+        if ambiente or not an:
+            await self.ambiente_schalten(an)
+        if ereignisse or not an:
+            self.ereignisse_schalten(an)
+        if not an and self.spieler:
+            await self.spieler.stoppen()
+        self.protokollieren(f"Show {'an' if an else 'aus'}{f' ({quelle})' if quelle else ''}", "info")
+
+    def ereignisse_schalten(self, an: bool) -> None:
+        self.zustand.ereignisse_an = an
+        self.speichern("zustand")
+        if self.generator:
+            self.generator.neu_planen()
+        self._zustand_geaendert()
+
+    def gruselstufe(self, stufe: int) -> None:
+        stufe = max(1, min(3, stufe))
+        if stufe != self.zustand.gruselstufe:
+            self.zustand.gruselstufe = stufe
+            self.speichern("zustand")
+            self.protokollieren(f"Gruselstufe {stufe}", "info")
+            self._zustand_geaendert()
+
+    async def szene_starten(self, sid: str, quelle: str = "") -> Szene:
+        s = next((s for s in self.szenen.liste if s.id == sid), None)
+        if not s:
+            raise KeyError(sid)
+        assert self.spieler
+        await self.spieler.starten(s, quelle)
+        return s
+
+    async def ausloeser(self, quelle: str = "Klingel") -> bool:
+        """Auslöser von außen (Klingel/Bewegung). Beachtet Sperrzeit und Gruselstufe."""
+        k = self.einst.klingel
+        jetzt = time.monotonic()
+        if self.einst.klingel.nur_wenn_an and not self.zustand.licht.an:
+            return False
+        if self.zustand.gruselstufe < k.gruselstufe_min:
+            return False
+        if jetzt - getattr(self, "_letzter_ausloeser", -1e9) < k.sperre_s:
+            return False
+        self._letzter_ausloeser = jetzt
+        try:
+            await self.szene_starten(k.szene_id, quelle)
+        except KeyError:
+            self.protokollieren(f"{quelle}: Szene „{k.szene_id}“ gibt es nicht", "fehler")
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # Einstellungen
+    # ------------------------------------------------------------------
+    async def einstellungen_aendern(self, teil: str, daten: dict) -> None:
+        if teil not in Einstellungen.model_fields:
+            raise KeyError(teil)
+        alt = getattr(self.einst, teil)
+        neu_daten = {**alt.model_dump(), **daten}
+        for t, feld in GEHEIME_FELDER:  # Platzhalter = unverändert lassen
+            if t == teil and neu_daten.get(feld) == GEHEIM_PLATZHALTER:
+                neu_daten[feld] = getattr(alt, feld)
+        neu = type(alt).model_validate(neu_daten)
+        setattr(self.einst, teil, neu)
+        self.speichern("einst")
+        if teil == "licht":
+            self._zonen_anpassen()
+            self.speichern("zustand")
+            await self.licht.konfigurieren(neu)
+            await self._licht_senden()
+        elif teil == "ton":
+            await self.ton_geaendert()
+        self._melden(f"einst:{teil}")
+        self.daten_geaendert()
+
+    def regeln_setzen(self, e: Ereignisse) -> None:
+        vorhanden: set[str] = set()
+        for r in e.regeln:
+            if not r.id or r.id in vorhanden:
+                r.id = f"r{random.randrange(16**6):06x}"
+            vorhanden.add(r.id)
+            if r.max_s < r.min_s:
+                r.min_s, r.max_s = r.max_s, r.min_s
+        self.ereignisse = e
+        self.speichern("ereignisse")
+        if self.generator:
+            self.generator.neu_planen()
+        self.daten_geaendert()
+
+    def regel_beschreibung(self, r: Regel) -> str:
+        if r.typ == "kategorie":
+            return KATEGORIEN.get(r.ziel, r.ziel)
+        s = next((s for s in self.szenen.liste if s.id == r.ziel), None)
+        return f"Szene {s.name if s else r.ziel}"
