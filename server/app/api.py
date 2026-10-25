@@ -15,7 +15,7 @@ from . import homeassistant, pfade
 from .geraete import ROLLEN, Geraet
 from .medien import ID_MUSTER, KonvertierFehler, fx_umwandeln, musik_umwandeln
 from .modelle import (
-    Effekt, Ereignisse, Kategorie, LichtAktion, Musikstueck, Playlist, Stimmung, Szene, Zone, neue_id,
+    Ausloeser, Effekt, Ereignisse, Kategorie, LichtAktion, Musikstueck, Playlist, Stimmung, Szene, Zone, neue_id,
 )
 from .vorgaben import LICHT_JE_KATEGORIE
 from .zentrale import Zentrale
@@ -154,10 +154,19 @@ async def gruselstufe(request: Request, d: Stufe):
     return {"ok": True}
 
 
-@router.post("/api/ausloeser")
-async def ausloeser(request: Request):
-    """Für Home-Assistant-Automationen: wie die Klingel (mit Sperrzeit und Gruselstufe)."""
-    return {"ausgeloest": await zentrale(request).ausloeser("REST")}
+@router.put("/api/ausloeser")
+async def ausloeser_setzen(request: Request, d: list[Ausloeser]):
+    zentrale(request).ausloeser_setzen(d)
+    return zentrale(request).einst.ausloeser
+
+
+@router.post("/api/ausloeser/{aid}")
+async def ausloeser(request: Request, aid: str, test: bool = False):
+    """Wie der Sensor (mit Sperrzeit, Gruselstufe, Show an) – oder mit ?test=true ohne Prüfungen."""
+    try:
+        return {"ausgeloest": await zentrale(request).ausloeser(aid, "Test" if test else "", pruefen=not test)}
+    except KeyError as e:
+        raise _nicht_gefunden("Diesen Auslöser") from e
 
 
 # ---------------------------------------------------------------------------

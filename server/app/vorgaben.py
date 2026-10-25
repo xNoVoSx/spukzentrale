@@ -14,6 +14,8 @@ LICHT_JE_KATEGORIE: dict[str, LichtAktion | None] = {
     "lachen": LichtAktion(name="flackern", dauer_ms=0, staerke=90),
     "herz": LichtAktion(name="env_puls", dauer_ms=0, staerke=80),
     "kette": LichtAktion(name="flackern", dauer_ms=0, staerke=60),
+    "kettensaege": LichtAktion(name="flackern", dauer_ms=0, staerke=100),
+    "stimme": LichtAktion(name="env_puls", dauer_ms=0, staerke=60),
     "wind": None,
     "sonstiges": None,
     "system": None,
@@ -52,7 +54,9 @@ def _fx(t, kategorie, vol=100, licht="auto", aktion=None) -> Schritt:
     return Schritt(t_ms=t, typ="fx", kategorie=kategorie, vol=vol, licht=licht, aktion=aktion)
 
 
-SZENEN = [
+# (Version, in der die Szene dazukam, Szene) – siehe Zentrale._vorgaben_ergaenzen
+SZENEN_VERSION = 2
+SZENEN = [(1, s) for s in [
     Szene(id="gewitterfront", name="Gewitterfront", gruselstufe=1, eingebaut=True, schritte=[
         Schritt(t_ms=0, typ="stimmung", stimmung_id="gewitternacht", dauer_ms=36000),
         _fx(0, "wind", vol=70, licht="keine"),
@@ -79,6 +83,15 @@ SZENEN = [
         _fx(11000, "lachen"),
         Schritt(t_ms=15000, typ="aktion", aktion=LichtAktion(name="welle", dauer_ms=1500, staerke=90)),
     ]),
+]] + [
+    (2, Szene(id="kettensaege", name="Kettensäge", gruselstufe=2, eingebaut=True, schritte=[
+        Schritt(t_ms=0, typ="aktion", aktion=LichtAktion(name="blackout", dauer_ms=900)),
+        _fx(600, "kettensaege"),
+    ])),
+    (2, Szene(id="begruessung", name="Begrüßung", gruselstufe=1, eingebaut=True, schritte=[
+        Schritt(t_ms=0, typ="stimmung", stimmung_id="dunkel", dauer_ms=8000),
+        _fx(300, "stimme"),
+    ])),
 ]
 
 REGELN = [

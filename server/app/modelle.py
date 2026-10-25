@@ -3,7 +3,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Muss zur Firmware passen (firmware/licht/src/effekte.cpp, firmware/common/protokoll.h)
 EFFEKTE = [
@@ -19,6 +19,8 @@ KATEGORIEN = {
     "herz": "Herz",
     "wind": "Wind",
     "kette": "Kette",
+    "kettensaege": "Kettensäge",
+    "stimme": "Stimme",
     "sonstiges": "Sonstiges",
 }
 
@@ -32,8 +34,9 @@ EffektName = Literal[
 AktionName = Literal[
     "keine", "blitz", "env_blitz", "schreck", "blackout", "welle", "alle_an", "puls", "test", "flackern", "env_puls",
 ]
-Kategorie = Literal["donner", "schrei", "lachen", "herz", "wind", "kette", "sonstiges", "system"]
-Prozent = Field(ge=0, le=100)
+Kategorie = Literal[
+    "donner", "schrei", "lachen", "herz", "wind", "kette", "kettensaege", "stimme", "sonstiges", "system",
+]
 
 
 def neue_id(name: str, vorhandene: set[str]) -> str:
@@ -166,6 +169,8 @@ class Szene(BaseModel):
 
 class Szenen(BaseModel):
     liste: list[Szene] = Field(default_factory=list)
+    # welche eingebauten Szenen schon angelegt wurden (neue Versionen ergänzen nur neue)
+    vorgaben_version: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -250,13 +255,45 @@ class Grusel(BaseModel):
     stufe3_ab: str = Field("20:30", pattern=UHRZEIT)
 
 
-class Klingel(BaseModel):
+class Ausloeser(BaseModel):
+    """Sensor aus Home Assistant (Klingel, Personenerkennung …) löst Sound oder Szene aus."""
+    id: str = ""
+    name: str = Field("Auslöser", min_length=1, max_length=40)
     aktiv: bool = False
     entity_id: str = ""
-    szene_id: str = "schreck"
-    sperre_s: int = Field(120, ge=0, le=3600)
+    typ: Literal["szene", "kategorie"] = "szene"
+    ziel: str = "schreck"          # Szenen-ID oder Kategorie
+    vol: int = Field(100, ge=0, le=100)
+    sperre_s: int = Field(60, ge=0, le=3600)
     gruselstufe_min: int = Field(1, ge=1, le=3)
     nur_wenn_an: bool = True
+
+
+def _standard_ausloeser() -> list[Ausloeser]:
+    return [
+        Ausloeser(id="klingel", name="Klingel gedrückt", typ="szene", ziel="schreck", sperre_s=30),
+        Ausloeser(id="person", name="Person erkannt", typ="szene", ziel="kettensaege", sperre_s=180),
+    ]
+
+
+class Aufbau(BaseModel):
+    """Wie die LED-Streifen an der Wand hängen – für Montageplan und Live-Vorschau."""
+    wand_m: float = Field(5.0, gt=0, le=50)
+    streifen: int = Field(10, ge=1, le=60)            # senkrecht hängende Streifen, gleichmäßig verteilt
+    streifen_m: float = Field(1.0, gt=0, le=10)       # Länge je Streifen
+    # Zone je Streifen (von links); leer = gleichmäßig auf die Zonen verteilt
+    zuordnung: list[int] = Field(default_factory=list, max_length=60)
+    kasten_m: float = Field(2.5, ge=0, le=50)         # Position des Kastens von links
+    zuleitung_extra_m: float = Field(0.5, ge=0, le=20)  # Weg vom Kasten zum Anschluss des Streifens (Höhe)
+    einspeisung: Literal["oben", "unten"] = "oben"
+    watt_pro_m: float = Field(10.0, gt=0, le=50)
+    querschnitt_mm2: float = Field(0.75, gt=0, le=10)
+    netzteil_w: int = Field(200, ge=10, le=2000)
+
+    @field_validator("zuordnung")
+    @classmethod
+    def _zonen(cls, v: list[int]) -> list[int]:
+        return [max(0, min(MAX_ZONEN - 1, int(z))) for z in v]
 
 
 class HomeAssistant(BaseModel):
@@ -281,9 +318,35 @@ class Einstellungen(BaseModel):
     zeitplan: Zeitplan = Field(default_factory=Zeitplan)
     ruhezeit: Ruhezeit = Field(default_factory=Ruhezeit)
     grusel: Grusel = Field(default_factory=Grusel)
-    klingel: Klingel = Field(default_factory=Klingel)
+    ausloeser: list[Ausloeser] = Field(default_factory=_standard_ausloeser, max_length=20)
+    aufbau: Aufbau = Field(default_factory=Aufbau)
     homeassistant: HomeAssistant = Field(default_factory=HomeAssistant)
     mqtt: Mqtt = Field(default_factory=Mqtt)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _klingel_uebernehmen(cls, d):
+        """Version 1.0 hatte genau einen Auslöser "klingel" – in die Liste übernehmen."""
+        if isinstance(d, dict) and "klingel" in d and "ausloeser" not in d:
+            k = d.pop("klingel") or {}
+            liste = [a.model_dump() for a in _standard_ausloeser()]
+            liste[0].update({
+                "aktiv": k.get("aktiv", False), "entity_id": k.get("entity_id", ""),
+                "ziel": k.get("szene_id", "schreck"), "sperre_s": k.get("sperre_s", 30),
+                "gruselstufe_min": k.get("gruselstufe_min", 1), "nur_wenn_an": k.get("nur_wenn_an", True),
+            })
+            d["ausloeser"] = liste
+        return d
+
+    @field_validator("ausloeser")
+    @classmethod
+    def _ids(cls, v: list[Ausloeser]) -> list[Ausloeser]:
+        vorhanden: set[str] = set()
+        for a in v:
+            if not a.id or a.id in vorhanden:
+                a.id = neue_id(a.name, vorhanden)
+            vorhanden.add(a.id)
+        return v
 
 
 GEHEIME_FELDER = {("homeassistant", "token"), ("mqtt", "passwort")}

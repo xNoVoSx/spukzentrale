@@ -22,7 +22,7 @@ from .geraete import Geraet, Geraete
 from .licht import EspLicht, LichtAusgang
 from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
 from .modelle import (
-    GEHEIM_PLATZHALTER, GEHEIME_FELDER, KATEGORIEN, AKTIONEN, EFFEKTE, Effekt, Einstellungen, Ereignisse,
+    GEHEIM_PLATZHALTER, GEHEIME_FELDER, KATEGORIEN, AKTIONEN, EFFEKTE, Ausloeser, Effekt, Einstellungen, Ereignisse,
     LichtAktion, LichtZustand, Regel, Stimmung, Stimmungen, Szene, Szenen, TonEinst, Zone, Zustand,
 )
 from .speicher import lade, speichere
@@ -58,6 +58,7 @@ class Zentrale:
         self.ha_status = "aus"
         self.mqtt_status = "aus"
         self._letzter_fx_sync = 0.0
+        self._letzte_ausloesung: dict[str, float] = {}
         self._zuletzt_gespielt: dict[str, str] = {}
         self.beobachter: list[Callable[[str], None]] = []  # z. B. MQTT: bei Änderungen benachrichtigen
 
@@ -73,8 +74,15 @@ class Zentrale:
         if not self.stimmungen.liste:
             self.stimmungen.liste = [s.model_copy(deep=True) for s in vorgaben.STIMMUNGEN]
             speichere(pfade.CONFIG / "stimmungen.json", self.stimmungen)
-        if not self.szenen.liste:
-            self.szenen.liste = [s.model_copy(deep=True) for s in vorgaben.SZENEN]
+        if self.szenen.liste and self.szenen.vorgaben_version == 0:
+            self.szenen.vorgaben_version = 1  # Stand von 1.0 (kannte die Versionsnummer noch nicht)
+        if self.szenen.vorgaben_version < vorgaben.SZENEN_VERSION:
+            # nur Szenen ergänzen, die in neueren Versionen dazugekommen sind
+            vorhanden = {s.id for s in self.szenen.liste}
+            for version, szene in vorgaben.SZENEN:
+                if version > self.szenen.vorgaben_version and szene.id not in vorhanden:
+                    self.szenen.liste.append(szene.model_copy(deep=True))
+            self.szenen.vorgaben_version = vorgaben.SZENEN_VERSION
             speichere(pfade.CONFIG / "szenen.json", self.szenen)
         if not self.ereignisse.regeln:
             self.ereignisse.regeln = [r.model_copy(deep=True) for r in vorgaben.REGELN]
@@ -462,21 +470,33 @@ class Zentrale:
         await self.spieler.starten(s, quelle)
         return s
 
-    async def ausloeser(self, quelle: str = "Klingel") -> bool:
-        """Auslöser von außen (Klingel/Bewegung). Beachtet Sperrzeit und Gruselstufe."""
-        k = self.einst.klingel
+    async def ausloeser(self, aid: str, quelle: str = "", pruefen: bool = True) -> bool:
+        """Auslöser von außen (Klingel, Personenerkennung …).
+
+        pruefen=False (Test-Knopf): Sperrzeit, Gruselstufe und Show-Zustand ignorieren.
+        """
+        a = next((x for x in self.einst.ausloeser if x.id == aid), None)
+        if not a:
+            raise KeyError(aid)
+        quelle = quelle or a.name
         jetzt = time.monotonic()
-        if self.einst.klingel.nur_wenn_an and not self.zustand.licht.an:
-            return False
-        if self.zustand.gruselstufe < k.gruselstufe_min:
-            return False
-        if jetzt - getattr(self, "_letzter_ausloeser", -1e9) < k.sperre_s:
-            return False
-        self._letzter_ausloeser = jetzt
+        if pruefen:
+            if a.nur_wenn_an and not self.zustand.licht.an:
+                return False
+            if self.zustand.gruselstufe < a.gruselstufe_min:
+                return False
+            if jetzt - self._letzte_ausloesung.get(a.id, -1e9) < a.sperre_s:
+                return False
+        self._letzte_ausloesung[a.id] = jetzt
+        if a.typ == "kategorie":
+            if not await self.fx_kategorie(a.ziel, a.vol, quelle=quelle):
+                self.protokollieren(f"{quelle}: keine Sounds in „{KATEGORIEN.get(a.ziel, a.ziel)}“", "fehler")
+                return False
+            return True
         try:
-            await self.szene_starten(k.szene_id, quelle)
+            await self.szene_starten(a.ziel, quelle)
         except KeyError:
-            self.protokollieren(f"{quelle}: Szene „{k.szene_id}“ gibt es nicht", "fehler")
+            self.protokollieren(f"{quelle}: Szene „{a.ziel}“ gibt es nicht", "fehler")
             return False
         return True
 
@@ -484,7 +504,7 @@ class Zentrale:
     # Einstellungen
     # ------------------------------------------------------------------
     async def einstellungen_aendern(self, teil: str, daten: dict) -> None:
-        if teil not in Einstellungen.model_fields:
+        if teil not in Einstellungen.model_fields or teil == "ausloeser":
             raise KeyError(teil)
         alt = getattr(self.einst, teil)
         neu_daten = {**alt.model_dump(), **daten}
@@ -502,6 +522,13 @@ class Zentrale:
         elif teil == "ton":
             await self.ton_geaendert()
         self._melden(f"einst:{teil}")
+        self.daten_geaendert()
+
+    def ausloeser_setzen(self, liste: list[Ausloeser]) -> None:
+        self.einst = self.einst.model_copy(update={"ausloeser": Einstellungen.model_validate(
+            {**self.einst.model_dump(), "ausloeser": [a.model_dump() for a in liste]}).ausloeser})
+        self.speichern("einst")
+        self._melden("einst:ausloeser")
         self.daten_geaendert()
 
     def regeln_setzen(self, e: Ereignisse) -> None:

@@ -34,19 +34,21 @@ Handy ──► SERVER (Docker)  Weboberfläche, Szenen, Zufallsereignisse, Zeit
 ## Funktionen
 
 - **Ambiente:** Playlist als Endlos-Stream mit Überblendung – keine Lücken beim Wiederholen.
-- **Effekt-Sounds** (Donner, Schrei, Lachen, Herz, Wind, Kette, Sonstiges) liegen im Flash des
+- **Effekt-Sounds** (Donner, Schrei, Lachen, Herz, Wind, Kette, Kettensäge, Stimme, Sonstiges) liegen im Flash des
   Sound-ESP und starten sofort. Jeder Sound hat eine Licht-Aktion, z. B. *Blitze zum Sound*:
   jeder Knall im Donner wird ein Blitz.
 - **Szenen** auf einer Zeitleiste: Gewitterfront, Schreck, Geisterwanderung, Herzschlag,
-  Hexenauftritt – und eigene.
+  Hexenauftritt, Kettensäge, Begrüßung – und eigene.
 - **Zufallsereignisse** nach Regeln (z. B. „Donner alle 1–4 Minuten“), mit Mindestabstand.
 - **Gruselstufen** 1 (Kinder) bis 3 (Schreck), auf Wunsch automatisch nach Uhrzeit.
 - **Stimmungen:** 14 Licht-Effekte pro Zone (Kerze, Feuer, Geist wandert, kaputte Röhre …),
   als Favoriten speicherbar.
 - **Zeitplan** ab Sonnenuntergang oder Uhrzeit, **Ruhezeit** (leiser oder nur Licht).
-- **Klingel-Auslöser:** Erkennt die Türklingel (z. B. Reolink) eine Person, startet eine Szene.
+- **Auslöser:** Klingel gedrückt → Schrei mit Schreck-Licht, Person erkannt → Kettensäge –
+  beliebige Sensoren aus Home Assistant (z. B. Reolink-Klingel), je mit eigener Sperrzeit.
 - **Home Assistant** über MQTT-Discovery und REST-API.
 - **Live-Vorschau** des Netzes in der Oberfläche – auch tagsüber einstellbar.
+- **Montageplan:** Aufbau eintragen, die Oberfläche rechnet Abstände, Kabellängen und Strom aus.
 - Licht-ESP läuft mit dem letzten Zustand weiter, wenn der Server weg ist.
 
 ## Teileliste
@@ -54,78 +56,67 @@ Handy ──► SERVER (Docker)  Weboberfläche, Szenen, Zufallsereignisse, Zeit
 | Teil | Anzahl | Hinweis |
 |---|---|---|
 | ESP32-Board (ESP32-WROOM-32, 4 MB Flash, z. B. diymore NodeMCU) | 2 | einer Licht, einer Sound |
-| MOSFET-Modul mit Optokoppler (LR7843, PWM-Eingang) | 5 | je Zone eins |
-| 12-V-LED-Streifen, einfarbig (z. B. COB) | 10 m | in 5 Zonen à ca. 1,6 m geschnitten |
+| MOSFET-Modul LR7843 (PWM-Eingang) | 5 | je Zone eins (6 für eine 6. Zone) |
+| 12-V-LED-Streifen, einfarbig (z. B. COB) | 10 m | z. B. 10 Stücke à 1 m, je 2 pro Zone |
 | Netzteil 12 V, 200 W | 1 | Reserve: 10 m COB ≈ 80–150 W |
 | I2S-DAC PCM5102A (Modul mit 3,5-mm-Buchse) | 1 | Ausgang an den AUX der Box |
 | Lautsprecher/Box mit AUX-Eingang | 1 | |
 | USB-Netzteile für die ESPs | 2 | oder Step-Down 12 → 5 V |
 | Flachsicherung 15 A + Halter | 1 | direkt hinter dem Netzteil |
 | Flachsicherung 3 A + Halter | 5 | optional, je Zone |
-| Litze 2 × 1,5 mm² | ca. 25 m | Zuleitungen zu den Zonen |
+| Litze 2 × 0,75 mm² | ca. 15 m | Zuleitungen und Brücken (genaue Länge: Montageplan in der Oberfläche) |
 | Dupont-Kabel, Klinkenkabel | | |
 | Gehäuse IP65 mit Kabelverschraubungen | 1 | für Elektronik und MOSFETs |
 
 ## Verkabelung
 
-```
- 230 V ──► NETZTEIL 12 V / 200 W
-             V+ ──[Sicherung 15 A]──► DC+ von MOSFET 1, 2, 3, 4, 5   (alle Module parallel)
-             V− ────────────────────► DC− von MOSFET 1, 2, 3, 4, 5
+![Verdrahtungsplan](docs/schaltplan.svg)
 
-             ┌────────┐┌────────┐┌────────┐┌────────┐┌────────┐
-             │MOSFET 1││MOSFET 2││MOSFET 3││MOSFET 4││MOSFET 5│
-             └────────┘└────────┘└────────┘└────────┘└────────┘
-              OUT+ OUT−   …   (2 × 1,5 mm², optional 3-A-Sicherung in OUT+)
-                │   │
-                ▼   ▼
-          LED-Zone 1 (+ / −)   …   LED-Zone 5
+*(Der Plan wird mit `python3 docs/schaltplan.py` erzeugt – Pins und Zonenzahl stehen oben im Skript.)*
 
-   Signalseite der Module:      PWM GND   PWM GND   PWM GND   PWM GND   PWM GND
-                                 │   │     │   │     │   │     │   │     │   │
- USB ──► ┌───────────────┐       │   │     │   │     │   │     │   │     │   │
-         │  ESP#1 LICHT  │ GPIO18┘   │     │   │     │   │     │   │     │   │
-         │               │ GPIO19────┼─────┘   │     │   │     │   │     │   │
-         │               │ GPIO21────┼─────────┼─────┘   │     │   │     │   │
-         │               │ GPIO22────┼─────────┼─────────┼─────┘   │     │   │
-         │               │ GPIO23────┼─────────┼─────────┼─────────┼─────┘   │
-         │               │ GND ──────┴─────────┴─────────┴─────────┴─────────┘
-         │               │
-         │   GPIO17 (TX) ├──────────────► GPIO16 (RX) ┐
-         │   GPIO16 (RX) ├◄────────────── GPIO17 (TX) │
-         │           GND ├─────────────── GND         │
-         └───────────────┘                ┌───────────┴───┐ ◄── USB
-                                          │  ESP#2 SOUND  │
-                                          │          3V3 ─┼──► VIN  ┌──────────┐
-                                          │          GND ─┼──► GND  │ PCM5102A │
-                                          │       GPIO26 ─┼──► BCK  │          ├── 3,5 mm ──► AUX Box
-                                          │       GPIO25 ─┼──► LCK  │          │
-                                          │       GPIO22 ─┼──► DIN  │          │
-                                          └───────────────┘   SCK ─► GND
-```
+**MOSFET-Modul (LR7843, drei Schraubklemmen + zwei Lötpunkte):**
 
-- **Gemeinsame Masse:** Die beiden ESPs müssen mit einer GND-Leitung verbunden sein, sonst
-  funktioniert die UART-Verbindung nicht. Die 12-V-Seite ist durch die Optokoppler getrennt
-  und muss nicht mit der ESP-Masse verbunden werden.
-- **PCM5102A-Lötbrücken** (Rückseite): FLT, DEMP, FMT auf **L**, XSMT auf **H**. Bei vielen
-  Modulen ist das ab Werk so. SCK an GND (der DAC erzeugt den Takt dann selbst).
+| Anschluss | kommt an |
+|---|---|
+| `+` | Netzteil +12 V (über die 15-A-Sicherung) **und** + der LED-Streifen der Zone |
+| `LOAD` | − der LED-Streifen der Zone (das Modul schaltet die Minusseite) |
+| `−` | Netzteil − (Masse) |
+| `PWM` | GPIO des Licht-ESP (18, 19, 21, 22, 23) |
+| `GND` | GND des Licht-ESP |
+
+- **Gemeinsame Masse:** ESP-GND an GND jedes Moduls und GND zwischen den beiden ESPs – sonst
+  funktionieren weder PWM noch UART. Bei Modulen ohne Optokoppler ist GND intern mit `−`
+  verbunden, das ist so gewollt.
+- **PCM5102A-Lötbrücken** (Rückseite): FLT, DEMP, FMT auf **L**, XSMT auf **H** (sonst bleibt er
+  stumm). SCK an GND – der DAC erzeugt den Takt dann selbst.
 - **Pins meiden:** GPIO 0, 2, 12, 15 (Boot) und 34–39 (nur Eingang).
-- Eine 6. Zone ist möglich (z. B. GPIO 25 am Licht-ESP), dann `ZONEN_PINS` in `config.h` und
-  die Zonenzahl in den Einstellungen anpassen.
+- Eine 6. Zone ist möglich (z. B. GPIO 25 am Licht-ESP): `ZONEN_PINS` in `config.h` und die
+  Zonenzahl unter *Einstellungen → Licht* anpassen.
 - Brummt es über AUX (Masseschleife), hilft ein Entstörfilter für Klinke.
 
 ## Montage am Gerüst
 
-- Die LED-Zonen hängen **unten an der Wand** und strahlen schräg nach oben **auf das Netz**.
-  Zonen gleichmäßig über die Breite verteilen; Zone 1 links, Zone 5 rechts (von der Straße
-  aus gesehen) – dann laufen Welle und Lauflicht in die richtige Richtung.
-- **Pappfiguren** 10–20 cm hinter dem Netz aufhängen – je näher am Netz, desto schärfer der Schatten.
-- Den Steuerkasten möglichst **in die Mitte** setzen, dann bleiben die Zuleitungen kurz
-  (≤ 5 m bei 1,5 mm² → kaum Spannungsabfall).
-- Nicht wetterfeste Streifen (IP20) vor Regen schützen (Alu-Profil mit Abdeckung oder
-  Silikonschlauch). Netzteil ins Trockene.
-- **Farbe:** Einfarbige Streifen lassen sich mit Farbfolie (Bühnen-Lichtfilter) einfärben.
-  In den Einstellungen bekommt jede Zone dann eine Farbe für die Live-Vorschau.
+Die LED-Streifen hängen **senkrecht an der Hauswand**, gleichmäßig verteilt (z. B. 10 Streifen
+à 1 m im Abstand von 50 cm auf 5 m Wand) und leuchten auf das Netz davor. Je zwei benachbarte
+Streifen bilden eine Zone. Pappfiguren zwischen Wand und Netz werfen Schatten.
+
+**Montageplan in der Weboberfläche:** *Einstellungen → Aufbau & Montageplan*. Dort Wandbreite,
+Anzahl und Länge der Streifen, Position des Kastens, Einspeisung (oben/unten), LED-Leistung und
+Kabelquerschnitt eintragen und festlegen, welcher Streifen an welcher Zone hängt. Die
+Oberfläche zeichnet daraus den Plan mit Abständen und berechnet je Zone Kabellänge, Strom,
+Spannungsabfall und die Auslastung des Netzteils. Die Live-Vorschau zeigt die Streifen an
+denselben Positionen.
+
+- Die Streifen einer Zone hängen **parallel**: Zuleitung vom Kasten zum ersten Streifen, von
+  dort eine kurze Brücke zum nächsten (+ an +, − an −).
+- Zone 1 links, Zone 5 rechts (von vorne gesehen) – dann laufen Welle und Lauflicht in die
+  richtige Richtung.
+- Den Kasten möglichst **in die Mitte** setzen, dann bleiben die Zuleitungen kurz.
+- **Figuren** 10–20 cm hinter dem Netz: je näher am Netz, desto schärfer der Schatten; je näher
+  am Licht, desto größer. Dicken schwarzen Karton nehmen, dünne Pappe scheint durch. An Angelschnur
+  aufgehängt bewegt der Wind sie – die Schatten leben.
+- Offene Streifenenden mit Schrumpfschlauch oder Silikon abdecken. Nicht wetterfeste Streifen
+  (IP20) vor Regen schützen, Netzteil ins Trockene.
 
 ## Firmware flashen
 
@@ -201,7 +192,7 @@ Die Weboberfläche hat keine Anmeldung – sie gehört ins Heimnetz, nicht ins I
 | 💡 **Licht** | Effekt, Tempo, Stärke und Grundlicht je Zone, „auf alle“, Zonen-Test, Stimmungen speichern |
 | 🔊 **Sounds** | Ambiente-Playlist (Reihenfolge, Zufall, Überblendung), Effekt-Sounds hochladen, Licht je Sound einstellen, Speicherbelegung |
 | 🎬 **Szenen** | Szenen-Editor (Zeitleiste) und Regeln für die Zufallsereignisse |
-| ⚙️ **Einstellungen** | Zeitplan, Ruhezeit, Gruselstufe nach Uhrzeit, Klingel, Home Assistant, MQTT, Standort, Ton, Licht, Geräte |
+| ⚙️ **Einstellungen** | Auslöser, Zeitplan, Ruhezeit, Gruselstufe nach Uhrzeit, Home Assistant, MQTT, Standort, Ton, Licht, Aufbau & Montageplan, Geräte |
 
 **Ersteinrichtung**
 
@@ -217,15 +208,19 @@ können bei Menschen mit Fotosensibilität Anfälle auslösen.
 
 ## Home Assistant
 
-### Klingel / Bewegung als Auslöser
+### Auslöser (Klingel, Personenerkennung)
 
 1. In Home Assistant ein Langzeit-Zugriffstoken anlegen (*Profil → Sicherheit*).
 2. *Einstellungen → Home Assistant*: Adresse (`http://<IP>:8123`) und Token eintragen.
-3. *Einstellungen → Klingel / Bewegung*: „Sensoren laden“, den Personen-Sensor wählen
-   (Reolink: `binary_sensor.<name>_person`), Szene, Sperrzeit und Gruselstufe einstellen.
+3. *Einstellungen → Auslöser*: „Sensoren aus Home Assistant laden“ und je Auslöser den Sensor
+   wählen. Bei der Reolink-Klingel:
+   - `binary_sensor.<name>_visitor` – **Klingel gedrückt** → Szene „Schreck“ (Schrei + Licht)
+   - `binary_sensor.<name>_person` – **Person erkannt** → Szene „Kettensäge“
+4. Je Auslöser: Szene oder zufälliger Sound einer Kategorie, Sperrzeit, ab welcher Gruselstufe,
+   nur wenn die Show läuft. „Jetzt testen“ löst sofort aus (ohne Sperrzeit).
 
-Die Spukzentrale beobachtet den Sensor über die WebSocket-API – in Home Assistant ist keine
-Automation nötig. Abschalten: Haken bei „Auslöser aktiv“ entfernen.
+Die Spukzentrale beobachtet die Sensoren über die WebSocket-API – in Home Assistant ist keine
+Automation nötig. Tipp: In der Reolink-App eine Erkennungszone nur für den eigenen Weg anlegen.
 
 ### MQTT
 
@@ -244,8 +239,8 @@ rest_command:
   spuk_schreck:
     url: http://<server>:8095/api/szenen/schreck/start
     method: POST
-  spuk_ausloeser:   # wie die Klingel: mit Sperrzeit und Gruselstufe
-    url: http://<server>:8095/api/ausloeser
+  spuk_klingel:     # wie der Sensor: mit Sperrzeit und Gruselstufe
+    url: http://<server>:8095/api/ausloeser/klingel
     method: POST
 ```
 
@@ -259,10 +254,10 @@ rest_command:
 | Licht kommt vor/nach dem Ton | *Einstellungen → Ton → Latenz* mit dem Ton-Licht-Abgleich einstellen. |
 | Kein Ton | DAC-Verkabelung und Lötbrücken (XSMT auf H!) prüfen, AUX-Eingang an der Box wählen, *Geräte*: läuft der Stream, wie voll ist der Puffer? |
 | Ton stottert, „Aussetzer“ zählen hoch | WLAN-Empfang am Sound-ESP zu schwach (RSSI unter −75 dBm) – näher an den Access Point oder externe Antenne. |
-| Zone flackert dunkel / leuchtet nicht ganz aus | Optokoppler-Modul mag die PWM nicht: `PWM_FREQUENZ` in `config.h` senken (z. B. 500). Zuleitung zu dünn? |
+| Zone flackert dunkel / leuchtet nicht ganz aus | Modul schaltet nicht sauber: `PWM_FREQUENZ` in `config.h` senken (z. B. 500). PWM/GND richtig gesteckt? Montageplan: Spannungsabfall zu hoch? |
 | Ganze Zone falsch herum (an = aus) | `PWM_INVERTIERT 1` in `config.h`. |
 | Effekt-Upload: „Speicher voll“ | Der Sound-ESP hat ca. 2,2 MB ≈ 3 Minuten Effekte. Lange Sounds kürzen oder löschen. |
-| Klingel löst nicht aus | *Einstellungen → Klingel*: Status „verbunden“? Sperrzeit, Gruselstufe und „Nur wenn die Show läuft“ beachten. Server-Log in Portainer ansehen. |
+| Auslöser reagiert nicht | *Einstellungen → Auslöser*: Status „verbunden“? Auslöser aktiv und gespeichert? Sperrzeit, Gruselstufe und „Nur wenn die Show läuft“ beachten. „Jetzt testen“ prüft Sound und Licht. Server-Log in Portainer ansehen. |
 | Server-Log | Portainer → Container `spukzentrale` → Logs. Mehr Details: Umgebungsvariable `SPUK_LOGLEVEL=DEBUG`. |
 
 ## Entwicklung

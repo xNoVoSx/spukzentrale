@@ -271,3 +271,10 @@ dialog h2 { margin-top: 0; color: var(--lila); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* Tabellen (Montageplan) */
+.tabelle { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0; }
+.tabelle th, .tabelle td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--rand); white-space: nowrap; }
+.tabelle th { color: var(--text-leise); font-weight: 600; }
+.tabelle .warnung { color: var(--gelb); }
+code { font-size: 13px; background: var(--bg); padding: 1px 5px; border-radius: 5px; }

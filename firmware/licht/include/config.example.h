@@ -22,7 +22,7 @@
 // 1 = Modul schaltet bei LOW ein (selten). Standard: 0
 #define PWM_INVERTIERT 0
 
-// PWM-Frequenz. Module mit Optokoppler (PC817) mögen niedrige Frequenzen.
+// PWM-Frequenz. 1 kHz passt für LR7843-Module; bei Problemen niedriger (z. B. 500).
 #define PWM_FREQUENZ 1000
 
 // --- UART-Verbindung zum Sound-ESP ---

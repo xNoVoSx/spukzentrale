@@ -3,6 +3,24 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.1.0] – 2026-10-25
+
+### Neu
+- **Auslöser-Liste:** beliebig viele Sensoren aus Home Assistant, je mit eigener Szene oder
+  Sound-Kategorie, Sperrzeit, Gruselstufe und Test-Knopf. Voreingestellt: „Klingel gedrückt“ →
+  Schreck, „Person erkannt“ → Kettensäge. Die Einstellung aus 1.0 wird übernommen.
+- Sound-Kategorien **Kettensäge** und **Stimme**, neue Szenen „Kettensäge“ und „Begrüßung“
+  (werden bei bestehenden Installationen ergänzt, gelöschte Szenen kommen nicht zurück)
+- **Aufbau & Montageplan:** Streifen, Abstände, Kasten-Position, Zonen-Zuordnung einstellbar;
+  die Oberfläche berechnet Kabellängen, Strom, Spannungsabfall und Netzteil-Auslastung
+- Live-Vorschau zeigt die senkrechten Streifen an ihren echten Positionen
+- Verdrahtungsplan als Grafik (`docs/schaltplan.svg`) passend zu den LR7843-Modulen
+  (`+`, `LOAD`, `−`)
+- MQTT: ein Knopf pro Auslöser
+
+### Geändert
+- REST: `POST /api/ausloeser` → `POST /api/ausloeser/<id>` (`?test=true` ohne Sperrzeit)
+
 ## [1.0.0] – 2026-10-25
 
 Erste Version für Halloween.

@@ -21,6 +21,7 @@ let letzteWerte = 0;       // Zeitpunkt der letzten Werte
 let haSensoren = null;     // Auswahlliste aus Home Assistant
 let entwurf = null;        // Szene im Editor
 let regelEntwurf = null;   // Ereignis-Regeln im Editor
+let ausloeserEntwurf = null; // Auslöser im Editor
 const offeneDetails = new Set(["e-zeitplan"]);
 const vorhoerer = new Audio();
 
@@ -33,7 +34,10 @@ const EFFEKT_NAMEN = {
   strobo: "Stroboskop", gewitter: "Gewitter", lauflicht: "Lauflicht", wandern: "Geist wandert", pingpong: "Ping-Pong",
   neon: "Kaputte Röhre", zufall: "Zufall", musik: "Zur Musik",
 };
-const KATEGORIE_SYMBOL = { donner: "⚡", schrei: "😱", lachen: "🧙", herz: "❤️", wind: "🌬️", kette: "⛓️", sonstiges: "👻", system: "🔧" };
+const KATEGORIE_SYMBOL = {
+  donner: "⚡", schrei: "😱", lachen: "🧙", herz: "❤️", wind: "🌬️", kette: "⛓️", kettensaege: "🪚", stimme: "🗣️", sonstiges: "👻", system: "🔧",
+};
+const PLAN_FARBEN = ["#ff7a1a", "#9b6bff", "#5fd17a", "#ffd166", "#4cc9f0", "#ff4d5e"];
 const AKTION_SYMBOL = { blitz: "⚡", schreck: "😱", blackout: "🌑", welle: "🌊", puls: "💓", alle_an: "☀️", flackern: "🕯️" };
 
 // ---------------------------------------------------------------------------
@@ -198,28 +202,70 @@ const fxDerKategorie = (k) => S.medien.fx.filter((f) => f.kategorie === k);
 // ---------------------------------------------------------------------------
 // Seite: Show
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Aufbau: Streifen an der Wand, Kabelwege, Strom (für Montageplan und Vorschau)
+// ---------------------------------------------------------------------------
+const KUPFER = 0.0175; // Ω·mm²/m
+
+function aufbauBerechnen() {
+  const a = S.einstellungen.aufbau;
+  const zonen = zonenAnzahl();
+  const abstand = a.wand_m / a.streifen;
+  const streifen = [...Array(a.streifen).keys()].map((i) => {
+    const zone = a.zuordnung[i] ?? Math.floor((i * zonen) / a.streifen);
+    return { i, x: abstand * (i + 0.5), zone, gueltig: zone < zonen };
+  });
+  const ampereProStreifen = (a.streifen_m * a.watt_pro_m) / 12;
+  const rProM = (2 * KUPFER) / a.querschnitt_mm2; // Hin- und Rückleiter
+  const zonenInfo = [...Array(zonen).keys()].map((z) => {
+    const eigene = streifen.filter((st) => st.zone === z);
+    let kabel = 0, abfall = 0;
+    const strecken = [];
+    // Der Kasten speist nach links und rechts je eine Kette (Zuleitung, dann Brücken)
+    for (const seite of [eigene.filter((st) => st.x < a.kasten_m).sort((p, q) => q.x - p.x),
+                         eigene.filter((st) => st.x >= a.kasten_m).sort((p, q) => p.x - q.x)]) {
+      let vorher = null, u = 0;
+      seite.forEach((st, k) => {
+        const laenge = vorher ? Math.abs(st.x - vorher.x) : Math.abs(st.x - a.kasten_m) + a.zuleitung_extra_m;
+        const strom = (seite.length - k) * ampereProStreifen; // fließt zu diesem und allen weiteren Streifen
+        u += strom * laenge * rProM;
+        kabel += laenge;
+        strecken.push({ von: vorher ? vorher.x : a.kasten_m, nach: st.x, laenge, bruecke: !!vorher });
+        vorher = st;
+      });
+      abfall = Math.max(abfall, u);
+    }
+    const watt = eigene.length * a.streifen_m * a.watt_pro_m;
+    return { zone: z, streifen: eigene, watt, ampere: watt / 12, kabel, abfall, strecken };
+  });
+  const watt = zonenInfo.reduce((m, z) => m + z.watt, 0);
+  return { a, abstand, streifen, zonenInfo, watt, kabel: zonenInfo.reduce((m, z) => m + z.kabel, 0) };
+}
+
 bereich("show-vorschau", "show", ["daten"], () => {
-  const n = zonenAnzahl();
-  const breite = 400;
-  const zonen = [...Array(n).keys()].map((i) => {
-    const x = 30 + ((i + 0.5) * (breite - 60)) / n;
-    const farbe = S.einstellungen.licht.zonen_farben[i];
+  const { a, streifen, abstand } = aufbauBerechnen();
+  const massstab = 372 / a.wand_m;
+  const breite = Math.max(10, abstand * massstab * 1.6);
+  const lichter = streifen.filter((st) => st.gueltig).map((st) => {
+    const x = 14 + st.x * massstab;
+    const farbe = S.einstellungen.licht.zonen_farben[st.zone];
     return `
-      <radialGradient id="zg${i}" cx="50%" cy="100%" r="100%">
-        <stop offset="0" stop-color="${farbe}" stop-opacity=".95"/>
-        <stop offset=".55" stop-color="${farbe}" stop-opacity=".35"/>
-        <stop offset="1" stop-color="${farbe}" stop-opacity="0"/>
-      </radialGradient>
-      <g class="vz" data-zone="${i}" opacity="0">
-        <ellipse cx="${x}" cy="176" rx="${(breite / n) * 0.78}" ry="150" fill="url(#zg${i})"/>
-        <rect x="${x - (breite / n) * 0.35}" y="180" width="${(breite / n) * 0.7}" height="4" rx="2" fill="${farbe}"/>
+      <g class="vz" data-zone="${st.zone}" opacity="0">
+        <ellipse cx="${x}" cy="100" rx="${breite}" ry="95" fill="url(#zg${st.zone})"/>
+        <rect x="${x - 1.5}" y="40" width="3" height="120" rx="1.5" fill="${farbe}"/>
       </g>`;
+  }).join("");
+  const verlaeufe = [...Array(zonenAnzahl()).keys()].map((z) => {
+    const farbe = S.einstellungen.licht.zonen_farben[z];
+    return `<radialGradient id="zg${z}"><stop offset="0" stop-color="${farbe}" stop-opacity=".9"/>
+      <stop offset=".5" stop-color="${farbe}" stop-opacity=".3"/><stop offset="1" stop-color="${farbe}" stop-opacity="0"/></radialGradient>`;
   }).join("");
   return `
     <div class="karte" style="padding:0">
       <div class="vorschau">
         <svg viewBox="0 0 400 200" role="img" aria-label="Live-Vorschau des Netzes">
           <defs>
+            ${verlaeufe}
             <pattern id="netz" width="6" height="6" patternUnits="userSpaceOnUse">
               <path d="M6 0H0V6" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width=".6"/>
             </pattern>
@@ -228,14 +274,13 @@ bereich("show-vorschau", "show", ["daten"], () => {
             </linearGradient>
           </defs>
           <rect width="400" height="200" fill="url(#nacht)"/>
-          ${zonen}
-          <rect x="14" y="14" width="372" height="162" fill="url(#netz)"/>
+          ${lichter}
+          <rect x="14" y="14" width="372" height="172" fill="url(#netz)"/>
           <g fill="#000" opacity=".6">
-            <path d="M118 150 q0-62 30-62 t30 62 l-7-8-8 8-7-8-8 8-7-8-8 8z"/>
-            <path d="M268 152 l10-40 10 40z M256 112 h44 l-4 6 h-36z M278 112 q-2-26 18-34 q-10 14-8 34z"/>
+            <path d="M118 160 q0-62 30-62 t30 62 l-7-8-8 8-7-8-8 8-7-8-8 8z"/>
+            <path d="M268 162 l10-40 10 40z M256 122 h44 l-4 6 h-36z M278 122 q-2-26 18-34 q-10 14-8 34z"/>
             <path d="M206 64 q8-10 16 0 q8-10 16 0 q-6-2-8 4 q-8-4-16 0 q-2-6-8-4z"/>
           </g>
-          <rect x="0" y="186" width="400" height="14" fill="#15101c"/>
         </svg>
         <div class="offline" id="vorschau-offline" hidden>Licht-ESP nicht verbunden – keine Live-Vorschau</div>
       </div>
@@ -545,12 +590,58 @@ function abschnitt(id, titel, teil, inhalt, marke = "") {
     </details>`;
 }
 
+function ausloeserZeile(a, i) {
+  const ziele = a.typ === "kategorie" ? kategorien() : S.szenen.map((s) => [s.id, s.name]);
+  return `
+    <div class="schritt">
+      <div class="schalter-zeile" style="padding-top:0">
+        <input type="text" value="${esc(a.name)}" maxlength="40" data-aenderung="ausloeser" data-i="${i}" data-feld="name" style="flex:1">
+        ${schalter("ausloeser", a.aktiv, `data-i="${i}" data-feld="aktiv"`)}
+      </div>
+      <label class="feld"><span>Sensor in Home Assistant</span>
+        <input type="text" list="ha-liste" value="${esc(a.entity_id)}" placeholder="binary_sensor.…" data-aenderung="ausloeser" data-i="${i}" data-feld="entity_id"></label>
+      <div class="feldreihe">
+        <label class="feld"><span>Was passiert</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="typ">${optionen([["szene", "Szene"], ["kategorie", "Sound aus Kategorie"]], a.typ)}</select></label>
+        <label class="feld"><span>${a.typ === "szene" ? "Szene" : "Kategorie"}</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="ziel">${optionen(ziele, a.ziel)}</select></label>
+      </div>
+      <div class="feldreihe">
+        <label class="feld"><span>Sperrzeit danach (s)</span><input type="number" min="0" max="3600" value="${a.sperre_s}" data-aenderung="ausloeser" data-i="${i}" data-feld="sperre_s"></label>
+        <label class="feld"><span>Ab Gruselstufe</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="gruselstufe_min" data-typ="zahl">${optionen([[1, "1"], [2, "2"], [3, "3"]], a.gruselstufe_min)}</select></label>
+        ${a.typ === "kategorie" ? `<label class="feld"><span>Lautstärke %</span><input type="number" min="0" max="100" value="${a.vol}" data-aenderung="ausloeser" data-i="${i}" data-feld="vol"></label>` : ""}
+      </div>
+      <div class="schalter-zeile"><div>Nur wenn die Show läuft</div>${schalter("ausloeser", a.nur_wenn_an, `data-i="${i}" data-feld="nur_wenn_an"`)}</div>
+      <div class="knopfreihe">
+        <button type="button" class="klein" data-aktion="ausloeser-test" data-id="${esc(a.id)}" ${a.id ? "" : "disabled"}>▶️ Jetzt testen</button>
+        <button type="button" class="klein gefahr" data-aktion="ausloeser-loeschen" data-i="${i}" style="margin-left:auto">🗑 Entfernen</button>
+      </div>
+    </div>`;
+}
+
+bereich("einst-ausloeser", "einstellungen", ["daten", "zustand"], () => {
+  if (!ausloeserEntwurf) ausloeserEntwurf = structuredClone(S.einstellungen.ausloeser);
+  const liste = haSensoren || [];
+  return `
+    <details class="karte" id="e-ausloeser">
+      <summary>🔔 Auslöser (Klingel, Personenerkennung)<span class="marke ${S.ha === "verbunden" ? "orange" : ""}">${esc(S.ha)}</span></summary>
+      <div class="inhalt">
+        <p class="hinweis">Ein Sensor aus Home Assistant (z. B. Reolink: <code>…_visitor</code> = Klingel gedrückt,
+          <code>…_person</code> = Person erkannt) startet eine Szene oder einen Sound. Home Assistant muss unten eingerichtet sein.</p>
+        <datalist id="ha-liste">${liste.map((x) => `<option value="${esc(x.entity_id)}">${esc(x.name)}</option>`).join("")}</datalist>
+        <button type="button" class="klein" data-aktion="ha-sensoren">Sensoren aus Home Assistant laden</button>
+        <div style="margin-top:10px">${ausloeserEntwurf.map(ausloeserZeile).join("")}</div>
+        <div class="knopfreihe">
+          <button type="button" class="klein" data-aktion="ausloeser-neu">+ Auslöser</button>
+          <button type="button" class="klein" data-aktion="ausloeser-verwerfen">Verwerfen</button>
+          <button type="button" class="primaer" data-aktion="ausloeser-speichern" style="margin-left:auto">Speichern</button>
+        </div>
+        <p class="hinweis">Tipp: In der Reolink-App eine Erkennungszone nur für euren Weg einstellen – sonst löst jeder auf dem Gehweg aus.</p>
+      </div>
+    </details>`;
+});
+
 bereich("einst-allgemein", "einstellungen", ["daten", "zustand"], () => {
   const e = S.einstellungen;
-  const zp = e.zeitplan, rz = e.ruhezeit, gr = e.grusel, k = e.klingel, ha = e.homeassistant, mq = e.mqtt, so = e.standort;
-  const sensoren = haSensoren
-    ? haSensoren.map((s) => [s.entity_id, `${s.name} (${s.entity_id})`])
-    : k.entity_id ? [[k.entity_id, k.entity_id]] : [["", "– erst Sensoren laden –"]];
+  const zp = e.zeitplan, rz = e.ruhezeit, gr = e.grusel, ha = e.homeassistant, mq = e.mqtt, so = e.standort;
   const statusMarke = (t) => `<span class="marke ${t === "verbunden" ? "orange" : ""}">${esc(t)}</span>`;
   return [
     abschnitt("e-zeitplan", "⏰ Zeitplan", "zeitplan", `
@@ -571,20 +662,10 @@ bereich("einst-allgemein", "einstellungen", ["daten", "zustand"], () => {
     abschnitt("e-grusel", "💀 Gruselstufe nach Uhrzeit", "grusel", `
       ${kasten("auto", "Automatisch umschalten", gr.auto, "früh für Kinder, später richtig gruselig")}
       <div class="feldreihe">${feld("stufe2_ab", "Stufe 2 ab", "time", gr.stufe2_ab)}${feld("stufe3_ab", "Stufe 3 ab", "time", gr.stufe3_ab)}</div>`),
-    abschnitt("e-klingel", "🔔 Klingel / Bewegung", "klingel", `
-      ${kasten("aktiv", "Auslöser aktiv", k.aktiv, "Person erkannt → Szene")}
-      ${auswahl("entity_id", "Sensor in Home Assistant", sensoren, k.entity_id)}
-      <button type="button" class="klein" data-aktion="ha-sensoren">Sensoren aus Home Assistant laden</button>
-      ${auswahl("szene_id", "Szene", S.szenen.map((s) => [s.id, s.name]), k.szene_id)}
-      <div class="feldreihe">
-        ${feld("sperre_s", "Sperrzeit danach (s)", "number", k.sperre_s, 'min="0" max="3600"')}
-        ${auswahl("gruselstufe_min", "Ab Gruselstufe", [[1, "1"], [2, "2"], [3, "3"]], k.gruselstufe_min, 'data-typ="zahl"')}
-      </div>
-      ${kasten("nur_wenn_an", "Nur wenn die Show läuft", k.nur_wenn_an)}`, statusMarke(S.ha)),
     abschnitt("e-ha", "🏠 Home Assistant", "homeassistant", `
       ${feld("url", "Adresse", "url", ha.url, 'placeholder="http://192.168.1.20:8123"')}
       ${feld("token", "Langzeit-Zugriffstoken", "password", ha.token, 'autocomplete="off"')}
-      <p class="hinweis">Token anlegen: Home Assistant → Profil → Sicherheit → Langlebige Zugangstoken.</p>`),
+      <p class="hinweis">Token anlegen: Home Assistant → Profil → Sicherheit → Langlebige Zugangstoken. Wird für die Auslöser gebraucht.</p>`, statusMarke(S.ha)),
     abschnitt("e-mqtt", "📡 MQTT", "mqtt", `
       ${kasten("aktiv", "MQTT aktiv", mq.aktiv, "Gerät „Spukzentrale“ erscheint automatisch in Home Assistant")}
       <div class="feldreihe">${feld("host", "Broker", "text", mq.host, 'placeholder="192.168.1.30"')}${feld("port", "Port", "number", mq.port, 'min="1" max="65535"')}</div>
@@ -629,6 +710,99 @@ bereich("einst-licht", "einstellungen", ["daten"], () => {
       ${[...Array(l.zonen).keys()].map((i) => `<button type="button" class="klein" data-aktion="zone-test" data-zone="${i}">${i + 1}</button>`).join("")}
       <button type="button" class="klein" data-aktion="zone-test" data-zone="-1">alle</button>
     </div>`);
+});
+
+function montageplan(plan) {
+  const { a, streifen, zonenInfo, abstand } = plan;
+  const W = 400, rand = 22, m = (W - 2 * rand) / a.wand_m;
+  const oben = a.einspeisung === "oben";
+  const y0 = 64, hoehe = Math.min(120, Math.max(40, a.streifen_m * 70));
+  const yKabel = oben ? y0 - 14 : y0 + hoehe + 14;
+  const yKasten = oben ? 16 : y0 + hoehe + 24;
+  const x = (meter) => rand + meter * m;
+  const kabel = zonenInfo.map((z) => z.strecken.map((st) => {
+    const versatz = (z.zone - (zonenInfo.length - 1) / 2) * 2.2;
+    const yk = yKabel + (oben ? -versatz : versatz);
+    const yAnschluss = oben ? y0 : y0 + hoehe;
+    return `<polyline points="${x(st.von)},${st.bruecke ? yk : (oben ? yKasten + 22 : yKasten)} ${x(st.von)},${yk} ${x(st.nach)},${yk} ${x(st.nach)},${yAnschluss}"
+      fill="none" stroke="${PLAN_FARBEN[z.zone]}" stroke-width="1.6" ${st.bruecke ? 'stroke-dasharray="3 2"' : ""}/>`;
+  }).join("")).join("");
+  const leds = streifen.map((st) => `
+    <rect x="${x(st.x) - 2.5}" y="${y0}" width="5" height="${hoehe}" rx="2" fill="${st.gueltig ? PLAN_FARBEN[st.zone] : "#555"}" opacity=".9"/>
+    <text x="${x(st.x)}" y="${oben ? y0 + hoehe + 12 : y0 - 6}" font-size="7" text-anchor="middle" fill="#a597b0">${st.x.toFixed(2).replace(".", ",")}</text>
+    <text x="${x(st.x)}" y="${oben ? y0 + hoehe + 21 : y0 - 15}" font-size="7" text-anchor="middle" fill="${st.gueltig ? PLAN_FARBEN[st.zone] : "#888"}" font-weight="700">Z${st.zone + 1}</text>`).join("");
+  const massY = oben ? y0 + hoehe + 38 : y0 - 30;
+  const s0 = streifen[0], s1 = streifen[1];
+  const abstandMass = s1 ? `
+    <line x1="${x(s0.x)}" y1="${massY - 10}" x2="${x(s1.x)}" y2="${massY - 10}" stroke="#ffd166" stroke-width=".8" marker-start="url(#pfeil)" marker-end="url(#pfeil)"/>
+    <text x="${(x(s0.x) + x(s1.x)) / 2}" y="${massY - 13}" font-size="7" text-anchor="middle" fill="#ffd166">${Math.round(abstand * 100)} cm</text>` : "";
+  const kastenB = 44;
+  return `
+    <svg viewBox="0 0 ${W} ${y0 + hoehe + 58}" style="width:100%;height:auto;background:#07050a;border-radius:10px" role="img" aria-label="Montageplan">
+      <defs><marker id="pfeil" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L6 3L0 6z" fill="#ffd166"/></marker></defs>
+      <rect x="${rand}" y="${y0 - 30}" width="${W - 2 * rand}" height="${hoehe + 56}" fill="#15101c" stroke="#34283f"/>
+      ${kabel}
+      ${leds}
+      <rect x="${x(a.kasten_m) - kastenB / 2}" y="${yKasten}" width="${kastenB}" height="22" rx="4" fill="#241b2d" stroke="#ff7a1a"/>
+      <text x="${x(a.kasten_m)}" y="${yKasten + 14}" font-size="8" text-anchor="middle" fill="#f1e9f6">Kasten</text>
+      ${abstandMass}
+      <line x1="${x(0)}" y1="${massY}" x2="${x(a.wand_m)}" y2="${massY}" stroke="#a597b0" stroke-width=".8" marker-start="url(#pfeil)" marker-end="url(#pfeil)"/>
+      <text x="${W / 2}" y="${massY + 10}" font-size="8" text-anchor="middle" fill="#a597b0">Wand ${String(a.wand_m).replace(".", ",")} m (Ansicht von vorne, Netz davor)</text>
+    </svg>`;
+}
+
+bereich("einst-aufbau", "einstellungen", ["daten"], () => {
+  const plan = aufbauBerechnen();
+  const a = plan.a;
+  const zonen = zonenAnzahl();
+  const fmt = (n, st = 1) => n.toFixed(st).replace(".", ",");
+  const zeilen = plan.zonenInfo.map((z) => `
+    <tr>
+      <td><span class="farbpunkt" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${PLAN_FARBEN[z.zone]}"></span> ${esc(zonenName(z.zone))}</td>
+      <td>${z.streifen.map((st) => fmt(st.x, 2)).join(" / ") || "–"} m</td>
+      <td>${fmt(z.watt, 0)} W · ${fmt(z.ampere)} A</td>
+      <td>${fmt(z.kabel)} m</td>
+      <td class="${z.abfall > 0.5 ? "warnung" : ""}">${fmt(z.abfall, 2)} V</td>
+    </tr>`).join("");
+  const ungueltig = plan.streifen.filter((st) => !st.gueltig).length;
+  const auslastung = (100 * plan.watt) / a.netzteil_w;
+  const zuordnung = plan.streifen.map((st) => `
+    <label class="feld" style="min-width:64px"><span>${fmt(st.x, 2)} m</span>
+      <select name="zuordnung.${st.i}" data-typ="zahl">${optionen([...Array(zonen).keys()].map((z) => [z, `Zone ${z + 1}`]), st.zone)}</select></label>`).join("");
+  return `
+    <details class="karte" id="e-aufbau">
+      <summary>📐 Aufbau & Montageplan</summary>
+      <form class="inhalt" data-teil="aufbau">
+        ${montageplan(plan)}
+        <p class="hinweis">Durchgezogen: Zuleitung vom Kasten · gestrichelt: Brücke zum nächsten Streifen derselben Zone.
+          Die Streifen einer Zone hängen parallel (+ an +, − an −).</p>
+        <div style="overflow-x:auto"><table class="tabelle">
+          <tr><th>Zone</th><th>Streifen bei</th><th>Last</th><th>Kabel</th><th>Abfall</th></tr>
+          ${zeilen}
+          <tr><th>Gesamt</th><th>${plan.streifen.length} × ${fmt(a.streifen_m, 2)} m</th><th>${fmt(plan.watt, 0)} W</th><th>${fmt(plan.kabel)} m</th><th></th></tr>
+        </table></div>
+        <p class="hinweis ${auslastung > 80 ? "warnung" : ""}">Netzteil: ${fmt(auslastung, 0)} % ausgelastet${auslastung > 80 ? " – über 80 %, größeres Netzteil oder weniger LED" : ""}.
+          Kabel: zweiadrig, jeweils + und −, plus Reserve für Schlaufen.</p>
+        ${ungueltig ? `<p class="hinweis warnung">${ungueltig} Streifen sind einer Zone zugeordnet, die es nicht gibt (Anzahl Zonen unter „Licht“).</p>` : ""}
+        <div class="feldreihe">
+          ${feld("wand_m", "Wandbreite (m)", "number", a.wand_m, 'step="0.05" min="0.1" max="50"')}
+          ${feld("streifen", "Anzahl Streifen", "number", a.streifen, 'min="1" max="60"')}
+          ${feld("streifen_m", "Länge je Streifen (m)", "number", a.streifen_m, 'step="0.05" min="0.05" max="10"')}
+          ${feld("kasten_m", "Kasten bei (m von links)", "number", a.kasten_m, 'step="0.05" min="0" max="50"')}
+          ${feld("zuleitung_extra_m", "Kasten bis Streifen-Anschluss (m, Höhe)", "number", a.zuleitung_extra_m, 'step="0.05" min="0" max="20"')}
+          ${auswahl("einspeisung", "Einspeisung", [["oben", "oben"], ["unten", "unten"]], a.einspeisung)}
+          ${feld("watt_pro_m", "LED-Leistung (W/m)", "number", a.watt_pro_m, 'step="0.5" min="0.5" max="50"')}
+          ${auswahl("querschnitt_mm2", "Kabel-Querschnitt", [[0.5, "0,5 mm²"], [0.75, "0,75 mm²"], [1, "1,0 mm²"], [1.5, "1,5 mm²"], [2.5, "2,5 mm²"]], a.querschnitt_mm2, 'data-typ="zahl"')}
+          ${feld("netzteil_w", "Netzteil (W)", "number", a.netzteil_w, 'min="10" max="2000"')}
+        </div>
+        <h3>Welcher Streifen hängt an welcher Zone?</h3>
+        <div class="feldreihe" style="grid-template-columns:repeat(auto-fill,minmax(80px,1fr))">${zuordnung}</div>
+        <div class="knopfreihe">
+          <button type="button" class="klein" data-aktion="aufbau-gleichmaessig">Gleichmäßig verteilen</button>
+          <button type="submit" class="primaer" style="margin-left:auto">Speichern & neu berechnen</button>
+        </div>
+      </form>
+    </details>`;
 });
 
 bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
@@ -958,9 +1132,28 @@ const AKTIONEN = {
   "ha-sensoren": async () => {
     toast("Lade Sensoren …");
     haSensoren = await api("GET", "/api/ha/sensoren");
-    toast(`${haSensoren.length} Sensoren gefunden`);
-    zeichne(BEREICHE.find((b) => b.id === "einst-allgemein"));
+    toast(`${haSensoren.length} Sensoren gefunden – im Feld „Sensor“ auswählen`);
+    zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
   },
+  "ausloeser-neu": () => {
+    ausloeserEntwurf.push({ id: "", name: "Neuer Auslöser", aktiv: true, entity_id: "", typ: "kategorie", ziel: "schrei", vol: 100, sperre_s: 60, gruselstufe_min: 1, nur_wenn_an: true });
+    zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
+  },
+  "ausloeser-loeschen": (el) => {
+    ausloeserEntwurf.splice(Number(el.dataset.i), 1);
+    zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
+  },
+  "ausloeser-verwerfen": () => {
+    ausloeserEntwurf = null;
+    zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
+  },
+  "ausloeser-speichern": async () => {
+    await api("PUT", "/api/ausloeser", ausloeserEntwurf);
+    ausloeserEntwurf = null;
+    toast("Auslöser gespeichert");
+  },
+  "ausloeser-test": (el) => api("POST", `/api/ausloeser/${el.dataset.id}?test=true`),
+  "aufbau-gleichmaessig": () => api("PUT", "/api/einstellungen/aufbau", { zuordnung: [] }),
   "latenz-test": () => api("POST", "/api/latenz/test"),
   neustart: async (el) => {
     if (confirm("Gerät neu starten?")) await api("POST", `/api/geraete/${el.dataset.rolle}/neustart`);
@@ -1056,6 +1249,15 @@ function aendern(el, live) {
     case "regel-abstand":
       regelEntwurf.min_abstand_s = wert;
       return;
+    case "ausloeser": {
+      const a = ausloeserEntwurf[Number(el.dataset.i)];
+      a[el.dataset.feld] = wert;
+      if (el.dataset.feld === "typ") {
+        a.ziel = wert === "kategorie" ? "schrei" : S.szenen[0]?.id ?? "";
+        zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
+      }
+      return;
+    }
   }
 }
 

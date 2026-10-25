@@ -83,6 +83,7 @@ class MqttBruecke:
                     await c.subscribe(f"{self.p}/+/set")
                     await c.subscribe(f"{self.p}/szene/+/start")
                     await c.subscribe(f"{self.p}/knopf/+")
+                    await c.subscribe(f"{self.p}/ausloeser/+/start")
                     await self._discovery(c)
                     await c.publish(f"{self.p}/verfuegbar", "online", qos=1, retain=True)
                     await self._zustaende(c)
@@ -159,8 +160,10 @@ class MqttBruecke:
                                       "command_topic": f"{p}/szene/{s.id}/start"}))
         e.append(("button", "stopp", {**self._basis("stopp", "Alles stoppen", "mdi:stop"),
                                       "command_topic": f"{p}/knopf/stopp"}))
-        e.append(("button", "ausloeser", {**self._basis("ausloeser", "Klingel-Auslöser", "mdi:doorbell"),
-                                          "command_topic": f"{p}/knopf/ausloeser"}))
+        for a in z.einst.ausloeser:
+            obj = f"ausloeser_{a.id.replace('-', '_')}"
+            e.append(("button", obj, {**self._basis(obj, f"Auslöser {a.name}", "mdi:doorbell"),
+                                      "command_topic": f"{p}/ausloeser/{a.id}/start"}))
         for rolle, name in (("licht", "Licht-ESP"), ("sound", "Sound-ESP")):
             obj = f"{rolle}_online"
             e.append(("binary_sensor", obj, {**self._basis(obj, name), "state_topic": f"{p}/{obj}",
@@ -228,8 +231,8 @@ class MqttBruecke:
         elif len(teile) == 3 and teile[0] == "szene" and teile[2] == "start":
             with contextlib.suppress(KeyError):
                 await z.szene_starten(teile[1], "Home Assistant")
-        elif len(teile) == 2 and teile[0] == "knopf":
-            if teile[1] == "stopp":
-                await z.alles_stoppen()
-            elif teile[1] == "ausloeser":
-                await z.ausloeser("Home Assistant")
+        elif len(teile) == 3 and teile[0] == "ausloeser" and teile[2] == "start":
+            with contextlib.suppress(KeyError):
+                await z.ausloeser(teile[1])  # wie der Sensor: mit Sperrzeit und Gruselstufe
+        elif len(teile) == 2 and teile[0] == "knopf" and teile[1] == "stopp":
+            await z.alles_stoppen()

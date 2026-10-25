@@ -40,7 +40,8 @@ def _anmelden(client, rolle, uart=True):
 
 def test_status_und_vorgaben(client):
     d = client.get("/api/status").json()
-    assert d["version"] == "1.0.0"
+    from app import VERSION
+    assert d["version"] == VERSION
     assert {s["id"] for s in d["szenen"]} >= {"gewitterfront", "schreck", "geisterwanderung", "herzschlag", "hexenauftritt"}
     assert any(f["kategorie"] == "system" for f in d["medien"]["fx"])  # Test-Klick
     assert len(d["zustand"]["licht"]["zonen"]) == 5
@@ -137,12 +138,32 @@ def test_szene_mit_stimmung_ist_temporaer(client, ton):
 
 
 def test_ausloeser_sperrzeit_und_gruselstufe(client):
-    client.put("/api/einstellungen/klingel", json={"szene_id": "hexenauftritt", "sperre_s": 60, "gruselstufe_min": 2})
+    liste = client.get("/api/status").json()["einstellungen"]["ausloeser"]
+    assert [a["id"] for a in liste] == ["klingel", "person"]
+    liste[0].update({"ziel": "hexenauftritt", "sperre_s": 60, "gruselstufe_min": 2})
+    assert client.put("/api/ausloeser", json=liste).status_code == 200
     client.post("/api/gruselstufe", json={"stufe": 1})
-    assert client.post("/api/ausloeser").json()["ausgeloest"] is False
+    assert client.post("/api/ausloeser/klingel").json()["ausgeloest"] is False
     client.post("/api/gruselstufe", json={"stufe": 2})
-    assert client.post("/api/ausloeser").json()["ausgeloest"] is True
-    assert client.post("/api/ausloeser").json()["ausgeloest"] is False  # Sperrzeit
+    assert client.post("/api/ausloeser/klingel").json()["ausgeloest"] is True
+    assert client.post("/api/ausloeser/klingel").json()["ausgeloest"] is False  # Sperrzeit
+    assert client.post("/api/ausloeser/klingel?test=true").json()["ausgeloest"] is True  # Test-Knopf
+    assert client.post("/api/ausloeser/gibtsnicht").status_code == 404
+
+
+def test_neue_szenen_und_kategorien(client, ton):
+    d = client.get("/api/status").json()
+    assert {"kettensaege", "begruessung"} <= {s["id"] for s in d["szenen"]}
+    assert {"kettensaege", "stimme"} <= set(d["kategorien"])
+    f = _fx(client, ton, "saege.wav", "kettensaege")
+    assert f["licht"]["name"] == "flackern"
+
+
+def test_aufbau_einstellbar(client):
+    r = client.put("/api/einstellungen/aufbau", json={"streifen": 12, "streifen_m": 0.8, "zuordnung": [0, 0, 1, 9]})
+    assert r.status_code == 200
+    a = client.get("/api/status").json()["einstellungen"]["aufbau"]
+    assert a["streifen"] == 12 and a["zuordnung"] == [0, 0, 1, 5] and a["wand_m"] == 5.0
 
 
 def test_geheimnisse_werden_nicht_ausgeliefert(client):

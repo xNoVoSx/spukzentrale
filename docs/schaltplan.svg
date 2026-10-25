@@ -1,0 +1,334 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 1466" width="1360" height="1466" font-family="DejaVu Sans, Arial, sans-serif">
+<rect width="1360" height="1460" fill="white"/>
+<text x="680.0" y="40" font-size="26" fill="#222222" text-anchor="middle" font-weight="700">Spukzentrale – Verdrahtung</text>
+<text x="680.0" y="64" font-size="14" fill="#777777" text-anchor="middle">Licht: 5 Zonen über LR7843-MOSFET-Module · Sound: I2S-DAC an AUX · beide ESP32 per USB versorgt</text>
+<rect x="640" y="84" width="180" height="62" rx="10" fill="#f4f1f7" stroke="#444" stroke-width="2"/>
+<text x="730.0" y="108" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">Netzteil 12 V</text>
+<text x="730.0" y="126" font-size="12" fill="#777777" text-anchor="middle">200 W</text>
+<text x="836" y="114" font-size="14" fill="#d62828" text-anchor="start" font-weight="700">◄ 230 V ~</text>
+<polyline points="740,146 740,156" fill="none" stroke="#d62828" stroke-width="2.4" stroke-linejoin="round"/>
+<rect x="731" y="156" width="18" height="26" rx="3" fill="#ffe8a3" stroke="#8a6d00" stroke-width="1.6"/>
+<text x="726" y="174" font-size="12" fill="#8a6d00" text-anchor="end" font-weight="700">Sicherung 15 A</text>
+<polyline points="740,182 740,815" fill="none" stroke="#d62828" stroke-width="3.2" stroke-linejoin="round"/>
+<polyline points="770,146 770,875" fill="none" stroke="#222222" stroke-width="3.2" stroke-linejoin="round"/>
+<text x="726" y="190" font-size="12" fill="#d62828" text-anchor="end" font-weight="700">+12 V</text>
+<text x="778" y="166" font-size="12" fill="#222222" text-anchor="start" font-weight="700">− (Masse)</text>
+<rect x="40" y="160" width="220" height="790" rx="10" fill="#e8f1fd" stroke="#1f6fd1" stroke-width="2"/>
+<text x="150.0" y="184" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">ESP#1 LICHT</text>
+<text x="150.0" y="202" font-size="12" fill="#777777" text-anchor="middle">ESP32-WROOM-32</text>
+<text x="150.0" y="222" font-size="12" fill="#777777" text-anchor="middle" font-style="italic">Strom: USB-Netzteil</text>
+<circle cx="260" cy="904" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="909" font-size="12" fill="#222222" text-anchor="end">GND</text>
+<polyline points="260,904 340,904 340,265" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
+<rect x="470" y="190" width="190" height="110" rx="8" fill="#1d1d1d" stroke="#000"/>
+<text x="565.0" y="252" font-size="15" fill="white" text-anchor="middle" font-weight="700">MOSFET 1</text>
+<text x="565.0" y="270" font-size="11" fill="#bbb" text-anchor="middle">LR7843</text>
+<circle cx="486" cy="230" r="6" fill="#d9b44a"/>
+<text x="498" y="234" font-size="11" fill="white" text-anchor="start" font-weight="700">PWM</text>
+<circle cx="486" cy="265" r="6" fill="#d9b44a"/>
+<text x="498" y="269" font-size="11" fill="white" text-anchor="start" font-weight="700">GND</text>
+<rect x="656" y="206" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="219" font-size="11" fill="white" text-anchor="end" font-weight="700">+</text>
+<rect x="656" y="236" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="249" font-size="11" fill="white" text-anchor="end" font-weight="700">LOAD</text>
+<rect x="656" y="266" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="279" font-size="11" fill="white" text-anchor="end" font-weight="700">−</text>
+<circle cx="260" cy="230" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="235" font-size="12" fill="#222222" text-anchor="end">GPIO18</text>
+<polyline points="260,230 480,230" fill="none" stroke="#2a9d3a" stroke-width="2.4" stroke-linejoin="round"/>
+<polyline points="340,265 480,265" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="340" cy="265" r="4.2" fill="#1f6fd1"/>
+<polyline points="674,215 1040,215" fill="none" stroke="#d62828" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="740" cy="215" r="4.2" fill="#d62828"/>
+<polyline points="674,275 770,275" fill="none" stroke="#222222" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="770" cy="275" r="4.2" fill="#222222"/>
+<polyline points="674,245 1040,245" fill="none" stroke="#555" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M733,245 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M733,245 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,245 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,245 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,215 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,215 a7,7 0 0 1 14,0" fill="none" stroke="#d62828" stroke-width="2.4"/>
+<rect x="1040" y="186" width="300" height="118" rx="10" fill="#fff7ec" stroke="#e07a00" stroke-dasharray="5 4"/>
+<text x="1190" y="206" font-size="13" fill="#e07a00" text-anchor="middle" font-weight="700">Zone 1 · 2 Streifen parallel</text>
+<polyline points="1050,215 1050,225 1100,225" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,245 1064,235 1100,235" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="221" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="234" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 1</text>
+<text x="1092" y="222" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="248" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<polyline points="1050,215 1050,265 1100,265" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,245 1064,275 1100,275" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="261" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="274" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 2</text>
+<text x="1092" y="262" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="288" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<circle cx="1050" cy="215" r="4.2" fill="#d62828"/>
+<circle cx="1064" cy="245" r="4.2" fill="#555"/>
+<rect x="470" y="340" width="190" height="110" rx="8" fill="#1d1d1d" stroke="#000"/>
+<text x="565.0" y="402" font-size="15" fill="white" text-anchor="middle" font-weight="700">MOSFET 2</text>
+<text x="565.0" y="420" font-size="11" fill="#bbb" text-anchor="middle">LR7843</text>
+<circle cx="486" cy="380" r="6" fill="#d9b44a"/>
+<text x="498" y="384" font-size="11" fill="white" text-anchor="start" font-weight="700">PWM</text>
+<circle cx="486" cy="415" r="6" fill="#d9b44a"/>
+<text x="498" y="419" font-size="11" fill="white" text-anchor="start" font-weight="700">GND</text>
+<rect x="656" y="356" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="369" font-size="11" fill="white" text-anchor="end" font-weight="700">+</text>
+<rect x="656" y="386" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="399" font-size="11" fill="white" text-anchor="end" font-weight="700">LOAD</text>
+<rect x="656" y="416" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="429" font-size="11" fill="white" text-anchor="end" font-weight="700">−</text>
+<circle cx="260" cy="380" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="385" font-size="12" fill="#222222" text-anchor="end">GPIO19</text>
+<polyline points="260,380 480,380" fill="none" stroke="#2a9d3a" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M333,380 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M333,380 a7,7 0 0 1 14,0" fill="none" stroke="#2a9d3a" stroke-width="2.4"/>
+<polyline points="340,415 480,415" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="340" cy="415" r="4.2" fill="#1f6fd1"/>
+<polyline points="674,365 1040,365" fill="none" stroke="#d62828" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="740" cy="365" r="4.2" fill="#d62828"/>
+<polyline points="674,425 770,425" fill="none" stroke="#222222" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="770" cy="425" r="4.2" fill="#222222"/>
+<polyline points="674,395 1040,395" fill="none" stroke="#555" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M733,395 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M733,395 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,395 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,395 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,365 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,365 a7,7 0 0 1 14,0" fill="none" stroke="#d62828" stroke-width="2.4"/>
+<rect x="1040" y="336" width="300" height="118" rx="10" fill="#fff7ec" stroke="#e07a00" stroke-dasharray="5 4"/>
+<text x="1190" y="356" font-size="13" fill="#e07a00" text-anchor="middle" font-weight="700">Zone 2 · 2 Streifen parallel</text>
+<polyline points="1050,365 1050,375 1100,375" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,395 1064,385 1100,385" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="371" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="384" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 3</text>
+<text x="1092" y="372" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="398" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<polyline points="1050,365 1050,415 1100,415" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,395 1064,425 1100,425" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="411" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="424" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 4</text>
+<text x="1092" y="412" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="438" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<circle cx="1050" cy="365" r="4.2" fill="#d62828"/>
+<circle cx="1064" cy="395" r="4.2" fill="#555"/>
+<rect x="470" y="490" width="190" height="110" rx="8" fill="#1d1d1d" stroke="#000"/>
+<text x="565.0" y="552" font-size="15" fill="white" text-anchor="middle" font-weight="700">MOSFET 3</text>
+<text x="565.0" y="570" font-size="11" fill="#bbb" text-anchor="middle">LR7843</text>
+<circle cx="486" cy="530" r="6" fill="#d9b44a"/>
+<text x="498" y="534" font-size="11" fill="white" text-anchor="start" font-weight="700">PWM</text>
+<circle cx="486" cy="565" r="6" fill="#d9b44a"/>
+<text x="498" y="569" font-size="11" fill="white" text-anchor="start" font-weight="700">GND</text>
+<rect x="656" y="506" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="519" font-size="11" fill="white" text-anchor="end" font-weight="700">+</text>
+<rect x="656" y="536" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="549" font-size="11" fill="white" text-anchor="end" font-weight="700">LOAD</text>
+<rect x="656" y="566" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="579" font-size="11" fill="white" text-anchor="end" font-weight="700">−</text>
+<circle cx="260" cy="530" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="535" font-size="12" fill="#222222" text-anchor="end">GPIO21</text>
+<polyline points="260,530 480,530" fill="none" stroke="#2a9d3a" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M333,530 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M333,530 a7,7 0 0 1 14,0" fill="none" stroke="#2a9d3a" stroke-width="2.4"/>
+<polyline points="340,565 480,565" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="340" cy="565" r="4.2" fill="#1f6fd1"/>
+<polyline points="674,515 1040,515" fill="none" stroke="#d62828" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="740" cy="515" r="4.2" fill="#d62828"/>
+<polyline points="674,575 770,575" fill="none" stroke="#222222" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="770" cy="575" r="4.2" fill="#222222"/>
+<polyline points="674,545 1040,545" fill="none" stroke="#555" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M733,545 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M733,545 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,545 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,545 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,515 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,515 a7,7 0 0 1 14,0" fill="none" stroke="#d62828" stroke-width="2.4"/>
+<rect x="1040" y="486" width="300" height="118" rx="10" fill="#fff7ec" stroke="#e07a00" stroke-dasharray="5 4"/>
+<text x="1190" y="506" font-size="13" fill="#e07a00" text-anchor="middle" font-weight="700">Zone 3 · 2 Streifen parallel</text>
+<polyline points="1050,515 1050,525 1100,525" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,545 1064,535 1100,535" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="521" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="534" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 5</text>
+<text x="1092" y="522" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="548" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<polyline points="1050,515 1050,565 1100,565" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,545 1064,575 1100,575" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="561" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="574" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 6</text>
+<text x="1092" y="562" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="588" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<circle cx="1050" cy="515" r="4.2" fill="#d62828"/>
+<circle cx="1064" cy="545" r="4.2" fill="#555"/>
+<rect x="470" y="640" width="190" height="110" rx="8" fill="#1d1d1d" stroke="#000"/>
+<text x="565.0" y="702" font-size="15" fill="white" text-anchor="middle" font-weight="700">MOSFET 4</text>
+<text x="565.0" y="720" font-size="11" fill="#bbb" text-anchor="middle">LR7843</text>
+<circle cx="486" cy="680" r="6" fill="#d9b44a"/>
+<text x="498" y="684" font-size="11" fill="white" text-anchor="start" font-weight="700">PWM</text>
+<circle cx="486" cy="715" r="6" fill="#d9b44a"/>
+<text x="498" y="719" font-size="11" fill="white" text-anchor="start" font-weight="700">GND</text>
+<rect x="656" y="656" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="669" font-size="11" fill="white" text-anchor="end" font-weight="700">+</text>
+<rect x="656" y="686" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="699" font-size="11" fill="white" text-anchor="end" font-weight="700">LOAD</text>
+<rect x="656" y="716" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="729" font-size="11" fill="white" text-anchor="end" font-weight="700">−</text>
+<circle cx="260" cy="680" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="685" font-size="12" fill="#222222" text-anchor="end">GPIO22</text>
+<polyline points="260,680 480,680" fill="none" stroke="#2a9d3a" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M333,680 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M333,680 a7,7 0 0 1 14,0" fill="none" stroke="#2a9d3a" stroke-width="2.4"/>
+<polyline points="340,715 480,715" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="340" cy="715" r="4.2" fill="#1f6fd1"/>
+<polyline points="674,665 1040,665" fill="none" stroke="#d62828" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="740" cy="665" r="4.2" fill="#d62828"/>
+<polyline points="674,725 770,725" fill="none" stroke="#222222" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="770" cy="725" r="4.2" fill="#222222"/>
+<polyline points="674,695 1040,695" fill="none" stroke="#555" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M733,695 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M733,695 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,695 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,695 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,665 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,665 a7,7 0 0 1 14,0" fill="none" stroke="#d62828" stroke-width="2.4"/>
+<rect x="1040" y="636" width="300" height="118" rx="10" fill="#fff7ec" stroke="#e07a00" stroke-dasharray="5 4"/>
+<text x="1190" y="656" font-size="13" fill="#e07a00" text-anchor="middle" font-weight="700">Zone 4 · 2 Streifen parallel</text>
+<polyline points="1050,665 1050,675 1100,675" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,695 1064,685 1100,685" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="671" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="684" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 7</text>
+<text x="1092" y="672" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="698" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<polyline points="1050,665 1050,715 1100,715" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,695 1064,725 1100,725" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="711" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="724" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 8</text>
+<text x="1092" y="712" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="738" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<circle cx="1050" cy="665" r="4.2" fill="#d62828"/>
+<circle cx="1064" cy="695" r="4.2" fill="#555"/>
+<rect x="470" y="790" width="190" height="110" rx="8" fill="#1d1d1d" stroke="#000"/>
+<text x="565.0" y="852" font-size="15" fill="white" text-anchor="middle" font-weight="700">MOSFET 5</text>
+<text x="565.0" y="870" font-size="11" fill="#bbb" text-anchor="middle">LR7843</text>
+<circle cx="486" cy="830" r="6" fill="#d9b44a"/>
+<text x="498" y="834" font-size="11" fill="white" text-anchor="start" font-weight="700">PWM</text>
+<circle cx="486" cy="865" r="6" fill="#d9b44a"/>
+<text x="498" y="869" font-size="11" fill="white" text-anchor="start" font-weight="700">GND</text>
+<rect x="656" y="806" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="819" font-size="11" fill="white" text-anchor="end" font-weight="700">+</text>
+<rect x="656" y="836" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="849" font-size="11" fill="white" text-anchor="end" font-weight="700">LOAD</text>
+<rect x="656" y="866" width="18" height="18" rx="3" fill="#2a7fd4" stroke="#0d3f73"/>
+<text x="652" y="879" font-size="11" fill="white" text-anchor="end" font-weight="700">−</text>
+<circle cx="260" cy="830" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="835" font-size="12" fill="#222222" text-anchor="end">GPIO23</text>
+<polyline points="260,830 480,830" fill="none" stroke="#2a9d3a" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M333,830 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M333,830 a7,7 0 0 1 14,0" fill="none" stroke="#2a9d3a" stroke-width="2.4"/>
+<polyline points="340,865 480,865" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="340" cy="865" r="4.2" fill="#1f6fd1"/>
+<polyline points="674,815 1040,815" fill="none" stroke="#d62828" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="740" cy="815" r="4.2" fill="#d62828"/>
+<polyline points="674,875 770,875" fill="none" stroke="#222222" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="770" cy="875" r="4.2" fill="#222222"/>
+<polyline points="674,845 1040,845" fill="none" stroke="#555" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M763,845 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,845 a7,7 0 0 1 14,0" fill="none" stroke="#555" stroke-width="2.4"/>
+<path d="M763,815 a7,7 0 0 1 14,0" fill="white" stroke="white" stroke-width="5"/>
+<path d="M763,815 a7,7 0 0 1 14,0" fill="none" stroke="#d62828" stroke-width="2.4"/>
+<rect x="1040" y="786" width="300" height="118" rx="10" fill="#fff7ec" stroke="#e07a00" stroke-dasharray="5 4"/>
+<text x="1190" y="806" font-size="13" fill="#e07a00" text-anchor="middle" font-weight="700">Zone 5 · 2 Streifen parallel</text>
+<polyline points="1050,815 1050,825 1100,825" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,845 1064,835 1100,835" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="821" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="834" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 9</text>
+<text x="1092" y="822" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="848" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<polyline points="1050,815 1050,865 1100,865" fill="none" stroke="#d62828" stroke-width="1.8" stroke-linejoin="round"/>
+<polyline points="1064,845 1064,875 1100,875" fill="none" stroke="#555" stroke-width="1.8" stroke-linejoin="round"/>
+<rect x="1100" y="861" width="226" height="18" rx="5" fill="#ffd9a8" stroke="#e07a00"/>
+<text x="1213" y="874" font-size="11" fill="#7a4300" text-anchor="middle">LED-Streifen 10</text>
+<text x="1092" y="862" font-size="11" fill="#d62828" text-anchor="middle" font-weight="700">+</text>
+<text x="1092" y="888" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
+<circle cx="1050" cy="815" r="4.2" fill="#d62828"/>
+<circle cx="1064" cy="845" r="4.2" fill="#555"/>
+<rect x="40" y="1040" width="220" height="190" rx="10" fill="#efe8fd" stroke="#7b3fe4" stroke-width="2"/>
+<text x="150.0" y="1064" font-size="16" fill="#222222" text-anchor="middle" font-weight="700"></text>
+<text x="150.0" y="1090" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">ESP#2 SOUND</text>
+<text x="150.0" y="1108" font-size="12" fill="#777777" text-anchor="middle">ESP32-WROOM-32</text>
+<text x="150.0" y="1216" font-size="12" fill="#777777" text-anchor="middle" font-style="italic">Strom: USB-Netzteil</text>
+<circle cx="90" cy="950" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<circle cx="90" cy="1040" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="90" y="940" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">TX 17</text>
+<text x="90" y="1062" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">RX 16</text>
+<polyline points="90,955 90,1035" fill="none" stroke="#e07a00" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="150" cy="950" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<circle cx="150" cy="1040" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="150" y="940" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">RX 16</text>
+<text x="150" y="1062" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">TX 17</text>
+<polyline points="150,955 150,1035" fill="none" stroke="#e07a00" stroke-width="2.4" stroke-linejoin="round"/>
+<circle cx="210" cy="950" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<circle cx="210" cy="1040" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="210" y="940" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">GND</text>
+<text x="210" y="1062" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">GND</text>
+<polyline points="210,955 210,1035" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
+<text x="270" y="1000" font-size="13" fill="#e07a00" text-anchor="start" font-weight="700">UART 115200 Baud: TX ↔ RX gekreuzt, GND gemeinsam (wichtig!)</text>
+<rect x="470" y="1040" width="190" height="190" rx="10" fill="#efe8fd" stroke="#7b3fe4" stroke-width="2"/>
+<text x="565.0" y="1064" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">PCM5102A</text>
+<text x="565.0" y="1082" font-size="12" fill="#777777" text-anchor="middle">I2S-DAC</text>
+<circle cx="260" cy="1122" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1127" font-size="12" fill="#222222" text-anchor="end">3V3</text>
+<circle cx="470" cy="1122" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1127" font-size="12" fill="#222222" text-anchor="start">VIN</text>
+<polyline points="265,1122 465,1122" fill="none" stroke="#d62828" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="260" cy="1142" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1147" font-size="12" fill="#222222" text-anchor="end">GND</text>
+<circle cx="470" cy="1142" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1147" font-size="12" fill="#222222" text-anchor="start">GND</text>
+<polyline points="265,1142 465,1142" fill="none" stroke="#1f6fd1" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="260" cy="1162" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1167" font-size="12" fill="#222222" text-anchor="end">GPIO26</text>
+<circle cx="470" cy="1162" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1167" font-size="12" fill="#222222" text-anchor="start">BCK</text>
+<polyline points="265,1162 465,1162" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="260" cy="1182" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1187" font-size="12" fill="#222222" text-anchor="end">GPIO25</text>
+<circle cx="470" cy="1182" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1187" font-size="12" fill="#222222" text-anchor="start">LCK</text>
+<polyline points="265,1182 465,1182" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="260" cy="1202" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1207" font-size="12" fill="#222222" text-anchor="end">GPIO22</text>
+<circle cx="470" cy="1202" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1207" font-size="12" fill="#222222" text-anchor="start">DIN</text>
+<polyline points="265,1202 465,1202" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="470" cy="1222" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1227" font-size="12" fill="#222222" text-anchor="start">SCK</text>
+<polyline points="465,1222 430,1222 430,1142" fill="none" stroke="#1f6fd1" stroke-width="1.6" stroke-linejoin="round"/>
+<circle cx="430" cy="1142" r="4.2" fill="#1f6fd1"/>
+<text x="424" y="1226" font-size="11" fill="#1f6fd1" text-anchor="end">SCK an GND</text>
+<rect x="652" y="1123" width="24" height="24" rx="12" fill="#333"/>
+<text x="684" y="1117" font-size="12" fill="#777777" text-anchor="start">3,5 mm Klinke</text>
+<polyline points="676,1135 910,1135" fill="none" stroke="#222222" stroke-width="4" stroke-linejoin="round"/>
+<rect x="910" y="1085" width="220" height="100" rx="10" fill="#f4f1f7" stroke="#444" stroke-width="2"/>
+<text x="1020.0" y="1109" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">Lautsprecher-Box</text>
+<text x="1020.0" y="1127" font-size="12" fill="#777777" text-anchor="middle">AUX-Eingang</text>
+<text x="40" y="1280" font-size="16" fill="#222222" text-anchor="start" font-weight="700">Hinweise</text>
+<text x="40" y="1306" font-size="13" fill="#222222" text-anchor="start">• PCM5102A-Lötbrücken auf der Rückseite: FLT, DEMP, FMT auf L – XSMT auf H (sonst stumm).</text>
+<text x="40" y="1328" font-size="13" fill="#222222" text-anchor="start">• MOSFET-Modul: Netzteil + an „+“, Netzteil − an „−“, LED + an „+“, LED − an „LOAD“ (Modul schaltet die Minusseite).</text>
+<text x="40" y="1350" font-size="13" fill="#222222" text-anchor="start">• ESP-GND an GND jedes Moduls. Bei Modulen ohne Optokoppler ist GND intern mit „−“ verbunden – das ist so gewollt.</text>
+<text x="40" y="1372" font-size="13" fill="#222222" text-anchor="start">• Leitungen: 0,75 mm² reichen bei 2 m LED pro Zone (≈ 1,7 A). Den Montageplan mit Längen berechnet die Weboberfläche.</text>
+<text x="40" y="1394" font-size="13" fill="#222222" text-anchor="start">• Pins meiden: GPIO 0, 2, 12, 15 (Boot) und 34–39 (nur Eingang). Eine 6. Zone ginge z. B. an GPIO 25 des Licht-ESP.</text>
+<polyline points="40,1436 74,1436" fill="none" stroke="#d62828" stroke-width="4" stroke-linejoin="round"/>
+<text x="82" y="1441" font-size="12" fill="#222222" text-anchor="start">+12 V</text>
+<polyline points="220,1436 254,1436" fill="none" stroke="#222222" stroke-width="4" stroke-linejoin="round"/>
+<text x="262" y="1441" font-size="12" fill="#222222" text-anchor="start">Masse 12 V</text>
+<polyline points="400,1436 434,1436" fill="none" stroke="#555" stroke-width="4" stroke-linejoin="round"/>
+<text x="442" y="1441" font-size="12" fill="#222222" text-anchor="start">LED − (geschaltet)</text>
+<polyline points="580,1436 614,1436" fill="none" stroke="#2a9d3a" stroke-width="4" stroke-linejoin="round"/>
+<text x="622" y="1441" font-size="12" fill="#222222" text-anchor="start">PWM</text>
+<polyline points="760,1436 794,1436" fill="none" stroke="#1f6fd1" stroke-width="4" stroke-linejoin="round"/>
+<text x="802" y="1441" font-size="12" fill="#222222" text-anchor="start">GND Steuerung</text>
+<polyline points="940,1436 974,1436" fill="none" stroke="#e07a00" stroke-width="4" stroke-linejoin="round"/>
+<text x="982" y="1441" font-size="12" fill="#222222" text-anchor="start">UART</text>
+<polyline points="1120,1436 1154,1436" fill="none" stroke="#7b3fe4" stroke-width="4" stroke-linejoin="round"/>
+<text x="1162" y="1441" font-size="12" fill="#222222" text-anchor="start">I2S</text>
+</svg>

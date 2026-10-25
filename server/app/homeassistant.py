@@ -1,7 +1,8 @@
 """Home Assistant über die offizielle WebSocket-API.
 
-Beobachtet einen Sensor (z. B. Personenerkennung der Reolink-Klingel) per
-`subscribe_trigger` und löst bei "on" die eingestellte Szene aus.
+Beobachtet die Sensoren der Auslöser (z. B. Klingeltaste und Personenerkennung der
+Reolink-Klingel) per `subscribe_trigger` und löst bei "on" den jeweiligen Sound bzw. die
+Szene aus.
 Doku: https://contributors.home-assistant.io/core/internals/websocket-api/
 """
 
@@ -87,7 +88,7 @@ class HomeAssistant:
         z.beobachter.append(self._geaendert)
 
     def _geaendert(self, art: str) -> None:
-        if art in ("einst:homeassistant", "einst:klingel"):
+        if art in ("einst:homeassistant", "einst:ausloeser"):
             self.neu_starten()
 
     def _status(self, text: str) -> None:
@@ -109,12 +110,13 @@ class HomeAssistant:
     async def _lauf(self) -> None:
         warte = 5
         while True:
-            ha, k = self.z.einst.homeassistant, self.z.einst.klingel
-            if not (ha.url and ha.token and k.aktiv and k.entity_id):
+            ha = self.z.einst.homeassistant
+            beobachten = {a.id: a.entity_id for a in self.z.einst.ausloeser if a.aktiv and a.entity_id}
+            if not (ha.url and ha.token and beobachten):
                 self._status("aus")
                 return
             try:
-                await self._verbinden(ha.url, ha.token, k.entity_id)
+                await self._verbinden(ha.url, ha.token, beobachten)
                 warte = 5
             except asyncio.CancelledError:
                 raise
@@ -124,18 +126,22 @@ class HomeAssistant:
             await asyncio.sleep(warte)
             warte = min(warte * 2, 120)
 
-    async def _verbinden(self, url: str, token: str, entity_id: str) -> None:
+    async def _verbinden(self, url: str, token: str, beobachten: dict[str, str]) -> None:
+        """beobachten: Auslöser-ID -> entity_id"""
         ws = await _anmelden(url, token)
         ids = itertools.count(1)
         try:
-            abo = next(ids)
-            await ws.send(json.dumps({
-                "id": abo,
-                "type": "subscribe_trigger",
-                "trigger": {"trigger": "state", "entity_id": entity_id, "to": "on"},
-            }))
+            abos: dict[int, str] = {}  # Abo-ID -> Auslöser-ID
+            for aid, entity_id in beobachten.items():
+                nr = next(ids)
+                abos[nr] = aid
+                await ws.send(json.dumps({
+                    "id": nr,
+                    "type": "subscribe_trigger",
+                    "trigger": {"trigger": "state", "entity_id": entity_id, "to": "on"},
+                }))
             self._status("verbunden")
-            log.info("Home Assistant verbunden, beobachte %s", entity_id)
+            log.info("Home Assistant verbunden, beobachte %s", ", ".join(beobachten.values()))
             while True:
                 try:
                     roh = await asyncio.wait_for(ws.recv(), 60)
@@ -143,10 +149,16 @@ class HomeAssistant:
                     await ws.send(json.dumps({"id": next(ids), "type": "ping"}))
                     continue
                 msg = json.loads(roh)
-                if msg.get("type") == "result" and msg.get("id") == abo and not msg.get("success"):
-                    raise HaFehler(msg.get("error", {}).get("message", "Abo fehlgeschlagen"))
-                if msg.get("type") == "event" and msg.get("id") == abo:
-                    if not await self.z.ausloeser("Klingel"):
-                        log.info("Klingel ausgelöst, aber gesperrt (Sperrzeit/Gruselstufe/Show aus)")
+                aid = abos.get(msg.get("id"))
+                if not aid:
+                    continue
+                if msg.get("type") == "result" and not msg.get("success"):
+                    raise HaFehler(f"{beobachten[aid]}: " + msg.get("error", {}).get("message", "Abo fehlgeschlagen"))
+                if msg.get("type") == "event":
+                    try:
+                        if not await self.z.ausloeser(aid):
+                            log.info("Auslöser %s gesperrt (Sperrzeit/Gruselstufe/Show aus)", aid)
+                    except KeyError:
+                        log.warning("Auslöser %s gibt es nicht mehr", aid)
         finally:
             await ws.close()
