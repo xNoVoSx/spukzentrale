@@ -13,3 +13,6 @@ __pycache__/
 
 # Daten (lokale Tests)
 /data/
+
+# Editor
+*.kate-swp
