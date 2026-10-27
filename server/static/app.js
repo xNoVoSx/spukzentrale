@@ -814,6 +814,8 @@ bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
       ? [`${s.fps ?? "?"} Bilder/s`, s.uart ? "Kabel zum Sound-ESP ok" : "⚠️ kein Signal vom Sound-ESP"]
       : [s.musik ? (s.musik_spielt ? `Stream läuft, Puffer ${s.puffer ?? 0} %` : "Stream verbindet …") : "Stream aus",
          `${s.stimmen ?? 0} Effekte aktiv`, `${s.unterlaeufe ?? 0} Aussetzer`, s.uart ? "Kabel ok" : "⚠️ kein Signal vom Licht-ESP",
+         `PCM-Teilblöcke: ${s.pcm_teilbloecke ?? "?"}`, `PCM-Leerblöcke: ${s.pcm_leerbloecke ?? "?"}`,
+         `MP3-Neupufferungen: ${s.mp3_neupufferungen ?? "?"}`, `PCM-Minimum: ${s.pcm_min_bytes ?? "?"} Bytes`,
          s.sync ? "gleicht Effekte ab …" : "", s.format_fehler ? "⚠️ Stream-Format falsch" : ""];
     const versionWarnung = g.fw !== S.version ? ` · ⚠️ Firmware ${esc(g.fw)} ≠ Server ${esc(S.version)}` : "";
     return `
