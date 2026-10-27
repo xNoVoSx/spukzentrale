@@ -188,6 +188,10 @@ static void sendeStatus() {
   d["puffer"] = a.puffer;
   d["stimmen"] = a.stimmen;
   d["unterlaeufe"] = a.unterlaeufe;
+  d["pcm_teilbloecke"] = a.pcmTeilbloecke;
+  d["pcm_leerbloecke"] = a.pcmLeerbloecke;
+  d["mp3_neupufferungen"] = a.mp3Neupufferungen;
+  d["pcm_min_bytes"] = a.pcmMinVerfuegbar;
   d["fx_frei_kb"] = fxFreiKb();
   d["fx_gesamt_kb"] = LittleFS.totalBytes() / 1024;
   d["uart"] = (millis() - letzteUartMs) < 3000;
