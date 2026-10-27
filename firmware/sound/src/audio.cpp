@@ -12,6 +12,7 @@
 
 #include "adpcm.h"
 #include "chunked.h"
+#include "musik_ausgabe.h"
 
 namespace spuk {
 
@@ -22,7 +23,10 @@ constexpr int BLOCK = 441;                    // 10 ms pro Mischblock
 constexpr int DMA_BLOECKE = 6;                // I2S-DMA hält 60 ms vor
 constexpr size_t MP3_PUFFER = 32 * 1024;      // ca. 2 s bei 128 kbit/s
 constexpr size_t MP3_VORLAUF = 12 * 1024;     // erst ab diesem Füllstand dekodieren
-constexpr size_t PCM_PUFFER = 8 * 1024;       // ca. 45 ms dekodiertes Stereo-PCM
+constexpr size_t PCM_PUFFER = 16 * 1024;      // ca. 93 ms dekodiertes Stereo-PCM
+constexpr size_t PCM_VORLAUF = 8 * 1024;      // so viel vor dem (Wieder-)Einsetzen sammeln (~46 ms)
+constexpr size_t PCM_STUECK = BLOCK * 4;      // Decoder schreibt in 10-ms-Stücken: legt nach, sobald 10 ms frei sind
+constexpr size_t EINBLENDEN = 220;            // 5 ms Einblenden nach dem Vorpuffern
 constexpr int MAX_BLOCK_BYTES = 1024;         // größtes unterstütztes ADPCM-Blockformat
 constexpr int MAX_BLOCK_SAMPLES = (MAX_BLOCK_BYTES - 4) * 2 + 1;
 constexpr int HUELLE_VERZ = 64;               // max. 640 ms Verzögerung
@@ -45,11 +49,8 @@ volatile uint32_t musikGen = 0;          // ändert sich bei jedem Start/Stopp
 volatile bool netzVerbunden = false;
 volatile bool formatFehler = false;
 volatile bool musikSpielt = false;
-volatile uint32_t unterlaeufe = 0;
-volatile uint32_t pcmTeilbloecke = 0;
-volatile uint32_t pcmLeerbloecke = 0;
 volatile uint32_t mp3Neupufferungen = 0;
-volatile uint32_t pcmMinVerfuegbar = PCM_PUFFER;
+MusikAusgabe musikAusgabe(PCM_VORLAUF, EINBLENDEN);   // nur in der Audio-Task benutzen (Zähler lesen ist ok)
 volatile uint8_t aktiveStimmen = 0;
 volatile bool fxGesperrt = false;
 
@@ -161,9 +162,13 @@ void netzTask(void*) {
 // Decoder: MP3 -> PCM (Stereo, 44,1 kHz)
 // ---------------------------------------------------------------------------
 void sendePcm(const int16_t* daten, size_t bytes, uint32_t gen) {
+  // In 10-ms-Stücken schreiben: xStreamBufferSend wartet, bis die GANZE Länge hineinpasst. Mit ganzen MP3-Frames
+  // (4608 Byte) durfte der Decoder erst nachlegen, wenn nur noch ~20 ms im Puffer waren – zu knapp.
   size_t gesendet = 0;
-  while (gesendet < bytes && musikSoll && gen == musikGen)
-    gesendet += xStreamBufferSend(pcmPuffer, (const uint8_t*)daten + gesendet, bytes - gesendet, pdMS_TO_TICKS(100));
+  while (gesendet < bytes && musikSoll && gen == musikGen) {
+    size_t n = bytes - gesendet < PCM_STUECK ? bytes - gesendet : PCM_STUECK;
+    gesendet += xStreamBufferSend(pcmPuffer, (const uint8_t*)daten + gesendet, n, pdMS_TO_TICKS(100));
+  }
 }
 
 void pcmFertig(MP3FrameInfo& info, short* pcm, size_t len, void*) {
@@ -221,7 +226,7 @@ void decoderTask(void*) {
     }
     size_t n = xStreamBufferReceive(mp3Puffer, buf, sizeof(buf), pdMS_TO_TICKS(150));
     if (n == 0) {
-      mp3Neupufferungen++;
+      mp3Neupufferungen = mp3Neupufferungen + 1;
       vorlauf = true;  // Puffer leergelaufen -> neu vorpuffern statt stottern
       continue;
     }
@@ -391,7 +396,6 @@ void audioTask(void*) {
   uint8_t verzPos = 0;
   float duckIst = 1.0f;
   float musikFade = 0.0f;  // weiches Ein-/Ausblenden des Ambientes
-  bool hatteMusik = false;
 
   for (;;) {
     Befehl b;
@@ -407,21 +411,10 @@ void audioTask(void*) {
     c = cfg;
     portEXIT_CRITICAL(&sperre);
 
-    // --- Ambiente ---
-    size_t bytes = 0;
-    size_t pcmVerfuegbar = musikSoll ? xStreamBufferBytesAvailable(pcmPuffer) : 0;
-    if (musikSoll && pcmVerfuegbar < pcmMinVerfuegbar) pcmMinVerfuegbar = pcmVerfuegbar;
-    // Auch Teilblöcke sofort entnehmen. Auf vollständige 10-ms-Blöcke zu warten
-    // erzeugt bei Decoder-/StreamBuffer-Chunking zusätzliche Stille und Rückstau.
-    if (musikSoll) bytes = xStreamBufferReceive(pcmPuffer, musik, sizeof(musik), 0);
-    if (musikSoll && bytes < sizeof(musik)) {
-      if (bytes > 0) pcmTeilbloecke++;
-      else pcmLeerbloecke++;
-      if (hatteMusik && !musikStopAnfrage) unterlaeufe++;
-    }
-    if (bytes < sizeof(musik)) memset((uint8_t*)musik + bytes, 0, sizeof(musik) - bytes);
-    hatteMusik = bytes > 0;
-    musikSpielt = bytes > 0;
+    // --- Ambiente: vorpuffern, bei Unterlauf weich aus- und wieder einblenden (siehe musik_ausgabe.h) ---
+    size_t frames = musikAusgabe.block(musik, BLOCK, musikSoll ? xStreamBufferBytesAvailable(pcmPuffer) : 0, musikSoll,
+                                       [](uint8_t* ziel, size_t n) { return xStreamBufferReceive(pcmPuffer, ziel, n, 0); });
+    musikSpielt = frames > 0;
 
     float fadeZiel = (musikSoll && !musikStopAnfrage) ? 1.0f : 0.0f;
     float fadeSchritt = fadeZiel > musikFade ? 0.01f : 0.04f;  // 1 s ein, 250 ms aus
@@ -516,9 +509,10 @@ void audioStart(int bck, int lck, int din, HardwareSerial* u) {
   ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx, &std));
   ESP_ERROR_CHECK(i2s_channel_enable(tx));
 
-  // Audio auf Kern 1 mit hoher Priorität, Netz/Decoder auf Kern 0 neben dem WLAN
+  // Audio und Decoder auf Kern 1 (Audio hat Vorrang und wartet meist auf den DMA), Netz auf Kern 0 neben dem
+  // WLAN. Auf Kern 0 wurde der Decoder von WLAN/TCP (höhere Priorität) zu oft länger als 20 ms verdrängt.
   xTaskCreatePinnedToCore(audioTask, "audio", 6144, nullptr, 20, nullptr, 1);
-  xTaskCreatePinnedToCore(decoderTask, "mp3", 8192, nullptr, 10, nullptr, 0);
+  xTaskCreatePinnedToCore(decoderTask, "mp3", 8192, nullptr, 10, nullptr, 1);
   xTaskCreatePinnedToCore(netzTask, "netz", 4096, nullptr, 5, nullptr, 0);
 }
 
@@ -572,11 +566,11 @@ AudioStatus audioStatus() {
   s.formatFehler = formatFehler;
   s.puffer = (uint8_t)(xStreamBufferBytesAvailable(mp3Puffer) * 100 / MP3_PUFFER);
   s.stimmen = aktiveStimmen;
-  s.unterlaeufe = unterlaeufe;
-  s.pcmTeilbloecke = pcmTeilbloecke;
-  s.pcmLeerbloecke = pcmLeerbloecke;
+  s.unterlaeufe = musikAusgabe.unterlaeufe;
+  s.pcmTeilbloecke = musikAusgabe.teilbloecke;
+  s.pcmLeerbloecke = musikAusgabe.leerbloecke;
   s.mp3Neupufferungen = mp3Neupufferungen;
-  s.pcmMinVerfuegbar = pcmMinVerfuegbar;
+  s.pcmMinVerfuegbar = musikAusgabe.minVerfuegbar > PCM_PUFFER ? PCM_PUFFER : musikAusgabe.minVerfuegbar;
   return s;
 }
 

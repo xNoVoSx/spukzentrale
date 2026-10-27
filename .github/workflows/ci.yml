@@ -44,6 +44,7 @@ jobs:
       - run: bash firmware/licht/test/effekte_test.sh
       - run: bash firmware/sound/test/adpcm_test.sh
       - run: bash firmware/sound/test/chunked_test.sh
+      - run: bash firmware/sound/test/musik_ausgabe_test.sh
 
   server-tests:
     name: Server-Tests

@@ -818,8 +818,8 @@ bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
           <div><small>Musikstream</small><div>${s.musik ? (s.musik_spielt ? "Läuft" : "Verbindet …") : "Aus"}</div></div>
           <div><small>Stream-Puffer</small><div>${s.puffer ?? "?"} %</div></div>
           <div><small>Aussetzer gesamt</small><div style="font-weight:700;color:${(s.unterlaeufe ?? 0) > 0 ? "var(--orange)" : "inherit"}">${s.unterlaeufe ?? "?"}</div></div>
-          <div><small>PCM-Teilblöcke</small><div>${s.pcm_teilbloecke ?? "?"}</div></div>
-          <div><small>PCM-Leerblöcke</small><div>${s.pcm_leerbloecke ?? "?"}</div></div>
+          <div><small>davon Puffer fast leer</small><div>${s.pcm_teilbloecke ?? "?"}</div></div>
+          <div><small>davon Puffer ganz leer</small><div>${s.pcm_leerbloecke ?? "?"}</div></div>
           <div><small>MP3-Neupufferungen</small><div>${s.mp3_neupufferungen ?? "?"}</div></div>
           <div><small>PCM-Minimum</small><div>${s.pcm_min_bytes ?? "?"} Bytes</div></div>
           <div><small>Effekte aktiv</small><div>${s.stimmen ?? "?"}</div></div>
