@@ -30,7 +30,11 @@ struct AudioStatus {
   bool formatFehler = false;
   uint8_t puffer = 0;       // Füllstand MP3-Puffer in %
   uint8_t stimmen = 0;      // aktive Effekt-Stimmen
-  uint32_t unterlaeufe = 0; // Aussetzer seit Start
+  uint32_t unterlaeufe = 0; // unvollständige Musikblöcke seit Start
+  uint32_t pcmTeilbloecke = 0; // PCM-Puffer hatte Daten, aber keinen vollständigen Block
+  uint32_t pcmLeerbloecke = 0; // PCM-Puffer war leer
+  uint32_t mp3Neupufferungen = 0; // Decoder musste erneut vorpuffern
+  uint32_t pcmMinVerfuegbar = 0; // niedrigster beobachteter PCM-Füllstand in Bytes
 };
 
 constexpr int MAX_STIMMEN = 4;
