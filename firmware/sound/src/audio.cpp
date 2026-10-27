@@ -46,6 +46,10 @@ volatile bool netzVerbunden = false;
 volatile bool formatFehler = false;
 volatile bool musikSpielt = false;
 volatile uint32_t unterlaeufe = 0;
+volatile uint32_t pcmTeilbloecke = 0;
+volatile uint32_t pcmLeerbloecke = 0;
+volatile uint32_t mp3Neupufferungen = 0;
+volatile uint32_t pcmMinVerfuegbar = PCM_PUFFER;
 volatile uint8_t aktiveStimmen = 0;
 volatile bool fxGesperrt = false;
 
@@ -217,6 +221,7 @@ void decoderTask(void*) {
     }
     size_t n = xStreamBufferReceive(mp3Puffer, buf, sizeof(buf), pdMS_TO_TICKS(150));
     if (n == 0) {
+      mp3Neupufferungen++;
       vorlauf = true;  // Puffer leergelaufen -> neu vorpuffern statt stottern
       continue;
     }
@@ -404,13 +409,20 @@ void audioTask(void*) {
 
     // --- Ambiente ---
     size_t bytes = 0;
-    if (musikSoll) bytes = xStreamBufferReceive(pcmPuffer, musik, sizeof(musik), 0);
-    if (bytes < sizeof(musik)) {
-      if (musikSoll && hatteMusik && !musikStopAnfrage) unterlaeufe = unterlaeufe + 1;
-      memset((uint8_t*)musik + bytes, 0, sizeof(musik) - bytes);
+    size_t pcmVerfuegbar = musikSoll ? xStreamBufferBytesAvailable(pcmPuffer) : 0;
+    if (pcmVerfuegbar < pcmMinVerfuegbar) pcmMinVerfuegbar = pcmVerfuegbar;
+    // Nur vollständige 10-ms-Blöcke entnehmen. Teilblöcke bleiben im StreamBuffer,
+    // damit Decoder-Jitter nicht mitten in einem Audioblock in Stille umgewandelt wird.
+    if (musikSoll && pcmVerfuegbar >= sizeof(musik))
+      bytes = xStreamBufferReceive(pcmPuffer, musik, sizeof(musik), 0);
+    if (musikSoll && bytes < sizeof(musik)) {
+      if (pcmVerfuegbar > 0) pcmTeilbloecke++;
+      else pcmLeerbloecke++;
+      if (hatteMusik && !musikStopAnfrage) unterlaeufe++;
     }
+    if (bytes < sizeof(musik)) memset((uint8_t*)musik + bytes, 0, sizeof(musik) - bytes);
     hatteMusik = bytes == sizeof(musik);
-    musikSpielt = bytes > 0;
+    musikSpielt = bytes == sizeof(musik);
 
     float fadeZiel = (musikSoll && !musikStopAnfrage) ? 1.0f : 0.0f;
     float fadeSchritt = fadeZiel > musikFade ? 0.01f : 0.04f;  // 1 s ein, 250 ms aus
@@ -562,6 +574,10 @@ AudioStatus audioStatus() {
   s.puffer = (uint8_t)(xStreamBufferBytesAvailable(mp3Puffer) * 100 / MP3_PUFFER);
   s.stimmen = aktiveStimmen;
   s.unterlaeufe = unterlaeufe;
+  s.pcmTeilbloecke = pcmTeilbloecke;
+  s.pcmLeerbloecke = pcmLeerbloecke;
+  s.mp3Neupufferungen = mp3Neupufferungen;
+  s.pcmMinVerfuegbar = pcmMinVerfuegbar;
   return s;
 }
 
