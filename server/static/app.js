@@ -810,7 +810,9 @@ bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
     const g = S.geraete[rolle];
     if (!g?.verbunden) return `<li><div class="name">${titel}<small>nicht verbunden</small></div><span class="marke">offline</span></li>`;
     const s = g.status || {};
-    const versionWarnung = g.fw !== S.version ? ` · ⚠️ Firmware ${esc(g.fw)} ≠ Server ${esc(S.version)}` : "";
+    // nur bei anderer Haupt-/Unterversion warnen (1.2.x passt zusammen; Patch-Versionen betreffen oft nur eine Seite)
+    const hauptversion = (v) => String(v || "").split(".").slice(0, 2).join(".");
+    const versionWarnung = hauptversion(g.fw) !== hauptversion(S.version) ? ` · ⚠️ Firmware ${esc(g.fw)} passt nicht zu Server ${esc(S.version)}` : "";
     const audioDiagnose = rolle === "sound" ? `
       <div style="margin-top:10px;padding:10px;border:1px solid var(--rand);border-radius:8px;background:var(--karte);">
         <strong>Audio-Diagnose</strong>

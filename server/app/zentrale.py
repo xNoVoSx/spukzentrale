@@ -430,6 +430,8 @@ class Zentrale:
             await self.aktion(blitz, quelle="Latenz-Test")
 
     async def ambiente_schalten(self, an: bool) -> None:
+        if an == self.zustand.ambiente_an:
+            return  # nichts ändern: ein erneutes "play" würde den laufenden Stream neu starten (hörbare Lücke)
         self.zustand.ambiente_an = an
         self.speichern("zustand")
         await self.geraete.senden("sound", {"t": "musik", "aktion": "play" if an else "stop", "pfad": "/stream/ambiente"})

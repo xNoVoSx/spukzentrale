@@ -3,6 +3,13 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.2.2] – 2026-10-27 (nur Server)
+
+### Behoben
+- „Ambiente an“, wenn es schon läuft (Hand, Zeitplan, Home Assistant), startete den Stream neu – kurze
+  hörbare Lücke. Jetzt wird nur bei einer echten Änderung geschaltet.
+- Versionshinweis unter „Geräte“ nur noch bei anderer Haupt-/Unterversion (Firmware 1.2.1 passt zu Server 1.2.2).
+
 ## [1.2.1] – 2026-10-27
 
 ### Geändert

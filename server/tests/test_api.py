@@ -203,3 +203,16 @@ def test_neustart_nach_absturz_wird_protokolliert(client):
         assert "Licht-ESP ist neu gestartet: Watchdog (Task)" in texte
     finally:
         ws.__exit__(None, None, None)
+
+
+def test_ambiente_doppelt_einschalten_startet_stream_nicht_neu(client):
+    sound = _anmelden(client, "sound")
+    try:
+        warte_auf(sound, "fx_sync")
+        client.post("/api/ambiente", json={"an": True})
+        assert warte_auf(sound, "musik")["aktion"] == "play"
+        client.post("/api/ambiente", json={"an": True})   # schon an -> kein zweites "play"
+        client.post("/api/ambiente", json={"an": False})
+        assert warte_auf(sound, "musik")["aktion"] == "stop"   # die nächste musik-Nachricht ist das Stopp
+    finally:
+        sound.__exit__(None, None, None)
