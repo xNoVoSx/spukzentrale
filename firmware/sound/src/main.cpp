@@ -25,7 +25,7 @@
 #include "protokoll.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "1.2.1"
+#define FW_VERSION "1.2.3"
 #endif
 
 using namespace spuk;
@@ -49,7 +49,16 @@ static volatile bool syncFertig = false;
 static int syncGeladen = 0, syncGeloescht = 0, syncFehler = 0;
 static String syncMeldung;
 
-static uint32_t fxFreiKb() { return (LittleFS.totalBytes() - LittleFS.usedBytes()) / 1024; }
+// Belegung des Effekt-Speichers. LittleFS geht dafür das ganze Dateisystem durch (auch für totalBytes) und liest
+// lange aus dem Flash – währenddessen stockt alles, was nicht im IRAM läuft, auch der MP3-Decoder (Aussetzer,
+// bis 6,8 s Hänger, Watchdog). Deshalb nur beim Start und nach jedem Abgleich messen, sonst den Merkwert senden.
+static volatile uint32_t fxFreiMerk = 0, fxGesamtMerk = 0;
+static void fxSpeicherMessen() {
+  size_t gesamt = LittleFS.totalBytes(), belegt = LittleFS.usedBytes();
+  fxGesamtMerk = gesamt / 1024;
+  fxFreiMerk = (gesamt - belegt) / 1024;
+}
+static uint32_t fxFreiKb() { return fxFreiMerk; }
 
 // ---------------------------------------------------------------------------
 // Effekt-Dateien abgleichen
@@ -136,7 +145,8 @@ static void syncTask(void* arg) {
   for (auto& p : weg)
     if (LittleFS.remove(p)) syncGeloescht++;
 
-  // 2. fehlende Dateien laden
+  // 2. fehlende Dateien laden (freien Platz einmal messen und mitrechnen – die Messung ist teuer)
+  size_t frei = LittleFS.totalBytes() - LittleFS.usedBytes();
   for (JsonObjectConst e : liste) {
     const char* id = e["id"] | "";
     uint32_t groesse = e["groesse"] | 0u;
@@ -144,7 +154,7 @@ static void syncTask(void* arg) {
     char pfad[48];
     fxDateiPfad(id, pfad, sizeof(pfad));
     if (LittleFS.exists(pfad)) continue;
-    if (groesse + 8192 > LittleFS.totalBytes() - LittleFS.usedBytes()) {
+    if (groesse + 8192 > frei) {
       syncFehler++;
       syncMeldung = "Flash voll";
       continue;
@@ -153,6 +163,7 @@ static void syncTask(void* arg) {
     uint32_t t0 = millis();
     if (ladeDatei(auftrag->basis + id, pfad, groesse, fehler)) {
       syncGeladen++;
+      frei -= ((groesse + 4095) / 4096) * 4096;   // LittleFS belegt ganze 4-KB-Blöcke
     } else {
       syncFehler++;
       Serial.printf("[sound] Effekt %s: %s (%u ms)\n", id, fehler.c_str(), millis() - t0);
@@ -161,6 +172,7 @@ static void syncTask(void* arg) {
     }
   }
 
+  fxSpeicherMessen();
   fxSperren(false);
   delete auftrag;
   syncFertig = true;
@@ -185,7 +197,7 @@ static void sendeHallo() {
   d["mac"] = WiFi.macAddress();
   d["ip"] = WiFi.localIP().toString();
   d["fx_frei_kb"] = fxFreiKb();
-  d["fx_gesamt_kb"] = LittleFS.totalBytes() / 1024;
+  d["fx_gesamt_kb"] = fxGesamtMerk;
   d["max_stimmen"] = MAX_STIMMEN;
   diagnose.hallo(d);
   sende(d);
@@ -211,7 +223,7 @@ static void sendeStatus() {
   d["mp3_neupufferungen"] = a.mp3Neupufferungen;
   d["pcm_min_bytes"] = a.pcmMinVerfuegbar;
   d["fx_frei_kb"] = fxFreiKb();
-  d["fx_gesamt_kb"] = LittleFS.totalBytes() / 1024;
+  d["fx_gesamt_kb"] = fxGesamtMerk;
   d["uart"] = (millis() - letzteUartMs) < 3000;
   d["sync"] = (bool)syncLaeuft;
   diagnose.status(d);
@@ -321,7 +333,8 @@ void setup() {
 
   if (!LittleFS.begin(true)) Serial.println(F("[sound] LittleFS konnte nicht eingebunden werden!"));
   if (!LittleFS.exists(FX_ORDNER)) LittleFS.mkdir(FX_ORDNER);
-  Serial.printf("[sound] Effekt-Speicher: %u KB frei von %u KB\n", fxFreiKb(), LittleFS.totalBytes() / 1024);
+  fxSpeicherMessen();
+  Serial.printf("[sound] Effekt-Speicher: %u KB frei von %u KB\n", (unsigned)fxFreiMerk, (unsigned)fxGesamtMerk);
 
   LichtUart.begin(UART_BAUD, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
   audioStart(I2S_BCK_PIN, I2S_LCK_PIN, I2S_DIN_PIN, &LichtUart);

@@ -413,6 +413,7 @@ void audioTask(void*) {
   uint8_t verzPos = 0;
   float duckIst = 1.0f;
   float musikFade = 0.0f;  // weiches Ein-/Ausblenden des Ambientes
+  uint32_t unterlaeufeGemeldet = 0;
 
   for (;;) {
     Befehl b;
@@ -432,6 +433,11 @@ void audioTask(void*) {
     size_t frames = musikAusgabe.block(musik, BLOCK, musikSoll ? xStreamBufferBytesAvailable(pcmPuffer) : 0, musikSoll,
                                        [](uint8_t* ziel, size_t n) { return xStreamBufferReceive(pcmPuffer, ziel, n, 0); });
     musikSpielt = frames > 0;
+    if (musikAusgabe.unterlaeufe != unterlaeufeGemeldet) {
+      unterlaeufeGemeldet = musikAusgabe.unterlaeufe;
+      fernlog("Aussetzer (Nr. %lu): Stream-Puffer %u %%", (unsigned long)unterlaeufeGemeldet,
+              (unsigned)(xStreamBufferBytesAvailable(mp3Puffer) * 100 / MP3_PUFFER));
+    }
 
     float fadeZiel = (musikSoll && !musikStopAnfrage) ? 1.0f : 0.0f;
     float fadeSchritt = fadeZiel > musikFade ? 0.01f : 0.04f;  // 1 s ein, 250 ms aus

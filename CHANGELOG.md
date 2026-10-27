@@ -3,6 +3,17 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.2.3] – 2026-10-27 (nur Sound-Firmware)
+
+### Behoben
+- Seltene kurze Aussetzer und ein Watchdog-Neustart beim Effekt-Abgleich: Der Status fragte alle 2 s den
+  freien Effekt-Speicher ab; LittleFS liest dafür das ganze Dateisystem (bis 6,8 s), währenddessen stockte
+  der MP3-Decoder. Jetzt nur beim Start und nach dem Abgleich gemessen (gemessen: 5 Status-Hänger über 1 s
+  = 5 Aussetzer in 15 min).
+
+### Neu
+- Jeder Aussetzer landet mit Stream-Füllstand im Fern-Log.
+
 ## [1.2.2] – 2026-10-27 (nur Server)
 
 ### Behoben
