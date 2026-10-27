@@ -810,19 +810,33 @@ bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
     const g = S.geraete[rolle];
     if (!g?.verbunden) return `<li><div class="name">${titel}<small>nicht verbunden</small></div><span class="marke">offline</span></li>`;
     const s = g.status || {};
-    const details = rolle === "licht"
-      ? [`${s.fps ?? "?"} Bilder/s`, s.uart ? "Kabel zum Sound-ESP ok" : "⚠️ kein Signal vom Sound-ESP"]
-      : [s.musik ? (s.musik_spielt ? `Stream läuft, Puffer ${s.puffer ?? 0} %` : "Stream verbindet …") : "Stream aus",
-         `${s.stimmen ?? 0} Effekte aktiv`, `${s.unterlaeufe ?? 0} Aussetzer`, s.uart ? "Kabel ok" : "⚠️ kein Signal vom Licht-ESP",
-         `PCM-Teilblöcke: ${s.pcm_teilbloecke ?? "?"}`, `PCM-Leerblöcke: ${s.pcm_leerbloecke ?? "?"}`,
-         `MP3-Neupufferungen: ${s.mp3_neupufferungen ?? "?"}`, `PCM-Minimum: ${s.pcm_min_bytes ?? "?"} Bytes`,
-         s.sync ? "gleicht Effekte ab …" : "", s.format_fehler ? "⚠️ Stream-Format falsch" : ""];
     const versionWarnung = g.fw !== S.version ? ` · ⚠️ Firmware ${esc(g.fw)} ≠ Server ${esc(S.version)}` : "";
+    const audioDiagnose = rolle === "sound" ? `
+      <div style="margin-top:10px;padding:10px;border:1px solid var(--linie);border-radius:8px;background:var(--karte);">
+        <strong>Audio-Diagnose</strong>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px;">
+          <div><small>Musikstream</small><div>${s.musik ? (s.musik_spielt ? "Läuft" : "Verbindet …") : "Aus"}</div></div>
+          <div><small>Stream-Puffer</small><div>${s.puffer ?? "?"} %</div></div>
+          <div><small>Aussetzer gesamt</small><div style="font-weight:700;color:${(s.unterlaeufe ?? 0) > 0 ? "var(--orange)" : "inherit"}">${s.unterlaeufe ?? "?"}</div></div>
+          <div><small>PCM-Teilblöcke</small><div>${s.pcm_teilbloecke ?? "?"}</div></div>
+          <div><small>PCM-Leerblöcke</small><div>${s.pcm_leerbloecke ?? "?"}</div></div>
+          <div><small>MP3-Neupufferungen</small><div>${s.mp3_neupufferungen ?? "?"}</div></div>
+          <div><small>PCM-Minimum</small><div>${s.pcm_min_bytes ?? "?"} Bytes</div></div>
+          <div><small>Effekte aktiv</small><div>${s.stimmen ?? "?"}</div></div>
+        </div>
+        ${s.format_fehler ? '<p class="hinweis warnung">⚠️ Stream-Formatfehler gemeldet</p>' : ""}
+        ${s.sync ? '<p class="hinweis">Effekte werden abgeglichen …</p>' : ""}
+      </div>` : "";
+    const geraeteDetails = rolle === "licht"
+      ? `${s.fps ?? "?"} Bilder/s · ${s.uart ? "Kabel zum Sound-ESP ok" : "⚠️ kein Signal vom Sound-ESP"}`
+      : `${s.uart ? "Kabel ok" : "⚠️ kein Signal vom Licht-ESP"}`;
     return `
       <li>
         <div class="name">${titel} <span class="marke orange">online</span>
           <small>IP ${esc(g.ip)} · FW ${esc(g.fw)}${versionWarnung} · WLAN ${s.rssi ?? "?"} dBm · Speicher frei ${s.heap ? Math.round(s.heap / 1024) + " KB" : "?"}</small>
-          <small>${details.filter(Boolean).map(esc).join(" · ")}</small></div>
+          <small>${geraeteDetails}</small>
+          ${audioDiagnose}
+        </div>
         <button type="button" class="klein" data-aktion="neustart" data-rolle="${rolle}">Neustart</button>
       </li>`;
   };
