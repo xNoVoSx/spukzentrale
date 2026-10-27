@@ -150,6 +150,9 @@ SPUK_SOUND_IP=<IP des Sound-ESP> SPUK_OTA_PASSWORT=<OTA_PASSWORT> pio run -d sou
 
 (In der fish-Shell: `env SPUK_LICHT_IP=… SPUK_OTA_PASSWORT=… pio run …`)
 
+Beim Update holt sich der ESP die Firmware über TCP-Port **14933** vom PC ab. Läuft auf dem PC eine Firewall
+(z. B. ufw), diesen Port für die ESPs freigeben: `sudo ufw allow from <IP des ESP> to any port 14933 proto tcp`.
+
 Die Effekt-Sounds lädt der Sound-ESP selbst vom Server – dafür ist kein extra Upload nötig.
 
 Die Treiber für den USB-Seriell-Chip CH340 sind unter Linux im Kernel enthalten.
