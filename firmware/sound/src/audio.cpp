@@ -411,18 +411,17 @@ void audioTask(void*) {
     size_t bytes = 0;
     size_t pcmVerfuegbar = musikSoll ? xStreamBufferBytesAvailable(pcmPuffer) : 0;
     if (musikSoll && pcmVerfuegbar < pcmMinVerfuegbar) pcmMinVerfuegbar = pcmVerfuegbar;
-    // Nur vollständige 10-ms-Blöcke entnehmen. Teilblöcke bleiben im StreamBuffer,
-    // damit Decoder-Jitter nicht mitten in einem Audioblock in Stille umgewandelt wird.
-    if (musikSoll && pcmVerfuegbar >= sizeof(musik))
-      bytes = xStreamBufferReceive(pcmPuffer, musik, sizeof(musik), 0);
+    // Auch Teilblöcke sofort entnehmen. Auf vollständige 10-ms-Blöcke zu warten
+    // erzeugt bei Decoder-/StreamBuffer-Chunking zusätzliche Stille und Rückstau.
+    if (musikSoll) bytes = xStreamBufferReceive(pcmPuffer, musik, sizeof(musik), 0);
     if (musikSoll && bytes < sizeof(musik)) {
-      if (pcmVerfuegbar > 0) pcmTeilbloecke++;
+      if (bytes > 0) pcmTeilbloecke++;
       else pcmLeerbloecke++;
       if (hatteMusik && !musikStopAnfrage) unterlaeufe++;
     }
     if (bytes < sizeof(musik)) memset((uint8_t*)musik + bytes, 0, sizeof(musik) - bytes);
-    hatteMusik = bytes == sizeof(musik);
-    musikSpielt = bytes == sizeof(musik);
+    hatteMusik = bytes > 0;
+    musikSpielt = bytes > 0;
 
     float fadeZiel = (musikSoll && !musikStopAnfrage) ? 1.0f : 0.0f;
     float fadeSchritt = fadeZiel > musikFade ? 0.01f : 0.04f;  // 1 s ein, 250 ms aus
