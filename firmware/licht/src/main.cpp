@@ -6,6 +6,10 @@
 //  - Lautstärke-Hüllkurve vom Sound-ESP per UART empfangen (Licht reagiert auf Ton)
 //  - letzten Zustand im Flash merken -> läuft auch ohne Server weiter
 //  - Updates über WLAN (ArduinoOTA)
+//
+// Zwei Abläufe: die Render-Task (100 Hz, Kern 1) liest den UART, rechnet die Effekte und schreibt PWM – sie hängt
+// nie am Netz. loop() macht WLAN, WebSocket, OTA und Speichern; hängt das WLAN, läuft das Licht trotzdem weiter.
+// Die Effekt-Engine teilen sich beide unter einem Mutex (nur für Mikrosekunden gesperrt, nie während Netzwerk-I/O).
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
@@ -20,11 +24,12 @@
 #include "config.example.h"
 #endif
 
+#include "diagnose.h"
 #include "effekte.h"
 #include "protokoll.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "1.1.0"
+#define FW_VERSION "1.2.0"
 #endif
 
 using namespace spuk;
@@ -42,17 +47,28 @@ static Preferences prefs;
 static RahmenLeser uartLeser;
 static HardwareSerial& SoundUart = Serial2;
 
+static Diagnose diagnose;
+static SemaphoreHandle_t maschineSperre = nullptr;  // schützt maschine und gammaWert
+static TaskHandle_t renderTask = nullptr;
+
 static float gammaWert = 2.2f;
 static bool wsVerbunden = false;
-static uint32_t letzterServerKontakt = 0;
-static uint32_t letzteUartMs = 0;
-static uint8_t letzteFlags = 0;
 static uint32_t speichernAb = 0;  // 0 = nichts zu speichern
 static String zuSpeichern;
-static uint32_t bilder = 0, bilderZeit = 0;
-static float fps = 0;
 static bool vorschau = false;  // Server will die aktuellen Zonenwerte sehen (Live-Vorschau)
-static float letzteWerte[MAX_ZONEN] = {0};
+
+// von der Render-Task geschrieben, von loop() gelesen
+static volatile uint32_t letzteUartMs = 0;
+static volatile uint8_t letzteFlags = 0;
+static volatile float fps = 0;
+static volatile uint32_t renderMaxUs = 0;
+static volatile float letzteWerte[MAX_ZONEN] = {0};
+static volatile float musikNorm = 0, fxNorm = 0;
+
+struct Sperre {  // RAII: Effekt-Engine für die Dauer eines Blocks sperren
+  Sperre() { xSemaphoreTake(maschineSperre, portMAX_DELAY); }
+  ~Sperre() { xSemaphoreGive(maschineSperre); }
+};
 
 // ---------------------------------------------------------------------------
 // Zustand anwenden (vom Server oder aus dem Flash)
@@ -89,6 +105,16 @@ static void wendeConfigAn(JsonObjectConst c) {
   }
 }
 
+static void zustandAnwenden(JsonObjectConst z) {
+  Sperre s;
+  wendeZustandAn(z);
+}
+
+static void configAnwenden(JsonObjectConst c) {
+  Sperre s;
+  wendeConfigAn(c);
+}
+
 static void merkeZumSpeichern(const char* json, size_t len) {
   zuSpeichern = String(json, len);
   speichernAb = millis() + 5000;  // Flash schonen: erst nach 5 s Ruhe
@@ -100,12 +126,13 @@ static void ladeGespeichertenZustand() {
   String c = prefs.getString("config", "");
   prefs.end();
   JsonDocument doc;
-  if (c.length() && !deserializeJson(doc, c)) wendeConfigAn(doc.as<JsonObjectConst>());
+  if (c.length() && !deserializeJson(doc, c)) configAnwenden(doc.as<JsonObjectConst>());
   if (z.length() && !deserializeJson(doc, z)) {
-    wendeZustandAn(doc.as<JsonObjectConst>());
+    zustandAnwenden(doc.as<JsonObjectConst>());
     Serial.println(F("[licht] gespeicherter Zustand geladen"));
   } else {
     // Werkseinstellung: alle Zonen flackern ruhig
+    Sperre s;
     for (int i = 0; i < ANZ_ZONEN; i++) {
       ZonenParam p;
       p.effekt = E_FLACKERN;
@@ -129,6 +156,7 @@ static void sendeHallo() {
   for (uint8_t e = 0; e < E_ANZAHL; e++) effekte.add(effektName(e));
   JsonArray aktionen = d["aktionen"].to<JsonArray>();
   for (uint8_t a = 1; a < A_ANZAHL; a++) aktionen.add(aktionName(a));
+  diagnose.hallo(d);
   String s;
   serializeJson(d, s);
   ws.sendTXT(s);
@@ -143,8 +171,11 @@ static void sendeStatus() {
   d["fps"] = (int)fps;
   d["uart"] = (millis() - letzteUartMs) < 1500;
   d["sound_musik"] = (letzteFlags & FLAG_MUSIK_AKTIV) != 0;
-  d["musik"] = (int)(maschine.musikNorm() * 100);
-  d["fx"] = (int)(maschine.fxNorm() * 100);
+  d["musik"] = (int)(musikNorm * 100);
+  d["fx"] = (int)(fxNorm * 100);
+  d["render_max_us"] = renderMaxUs;
+  renderMaxUs = 0;
+  diagnose.status(d);
   String s;
   serializeJson(d, s);
   ws.sendTXT(s);
@@ -165,14 +196,13 @@ static void verarbeite(uint8_t* payload, size_t len) {
   JsonDocument doc;
   if (deserializeJson(doc, payload, len)) return;
   const char* t = doc["t"] | "";
-  letzterServerKontakt = millis();
 
   if (strcmp(t, "zustand") == 0) {
-    wendeZustandAn(doc.as<JsonObjectConst>());
+    zustandAnwenden(doc.as<JsonObjectConst>());
     // "temp": kurzzeitige Stimmung aus einer Szene -> nicht als Notfall-Zustand merken
     if (!(doc["temp"] | false)) merkeZumSpeichern((const char*)payload, len);
   } else if (strcmp(t, "config") == 0) {
-    wendeConfigAn(doc.as<JsonObjectConst>());
+    configAnwenden(doc.as<JsonObjectConst>());
     prefs.begin("spuk", false);
     prefs.putString("config", String((const char*)payload, len));
     prefs.end();
@@ -184,9 +214,11 @@ static void verarbeite(uint8_t* payload, size_t len) {
       int z = v.as<int>();
       if (z >= 0 && z < ANZ_ZONEN) maske |= 1u << z;
     }
+    Sperre s;
     maschine.aktion(typ, millis(), doc["verz_ms"] | 0, doc["dauer_ms"] | 800, maske,
                     doc["staerke"] | 100, doc["param"] | 0);
   } else if (strcmp(t, "stopp") == 0) {
+    Sperre s;
     maschine.aktionenStoppen();
   } else if (strcmp(t, "vorschau") == 0) {
     vorschau = doc["an"] | false;
@@ -217,7 +249,7 @@ static void wsEreignis(WStype_t typ, uint8_t* payload, size_t len) {
 }
 
 // ---------------------------------------------------------------------------
-// UART vom Sound-ESP
+// UART vom Sound-ESP (Render-Task, Sperre gehalten)
 // ---------------------------------------------------------------------------
 static void leseUart() {
   while (SoundUart.available()) {
@@ -242,15 +274,56 @@ static void leseUart() {
 // ---------------------------------------------------------------------------
 // PWM-Ausgabe
 // ---------------------------------------------------------------------------
-static void schreibePwm(const float* werte) {
+static void schreibePwm(const float* werte, float gamma) {
   for (int i = 0; i < ANZ_ZONEN; i++) {
-    float v = powf(werte[i], gammaWert);
+    float v = powf(werte[i], gamma);
     uint32_t duty = (uint32_t)(v * PWM_MAX + 0.5f);
     if (duty > PWM_MAX) duty = PWM_MAX;
 #if PWM_INVERTIERT
     duty = PWM_MAX - duty;
 #endif
     ledcWrite(PINS[i], duty);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Render-Task: 100 Bilder/s, unabhängig vom Netz
+// ---------------------------------------------------------------------------
+static void renderSchleife(void*) {
+  TickType_t takt = xTaskGetTickCount();
+  uint32_t bilder = 0, bilderZeit = millis(), naechsterHerzschlag = 0;
+  for (;;) {
+    vTaskDelayUntil(&takt, pdMS_TO_TICKS(10));
+    uint32_t t0 = micros();
+    float werte[MAX_ZONEN];
+    float g;
+    {
+      Sperre s;
+      leseUart();
+      maschine.berechne(millis(), werte);
+      g = gammaWert;
+      musikNorm = maschine.musikNorm();
+      fxNorm = maschine.fxNorm();
+    }
+    schreibePwm(werte, g);
+    for (int i = 0; i < ANZ_ZONEN; i++) letzteWerte[i] = werte[i];
+    bilder++;
+
+    uint32_t jetzt = millis();
+    if (jetzt - bilderZeit >= 1000) {
+      fps = bilder * 1000.0f / (jetzt - bilderZeit);
+      bilder = 0;
+      bilderZeit = jetzt;
+    }
+    // Lebenszeichen an den Sound-ESP
+    if ((int32_t)(jetzt - naechsterHerzschlag) >= 0) {
+      naechsterHerzschlag = jetzt + 1000;
+      uint8_t buf[8];
+      size_t n = baueRahmen(MSG_HERZSCHLAG, nullptr, 0, buf);
+      SoundUart.write(buf, n);
+    }
+    uint32_t d = micros() - t0;
+    if (d > renderMaxUs) renderMaxUs = d;
   }
 }
 
@@ -267,10 +340,15 @@ void setup() {
 
   SoundUart.begin(UART_BAUD, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
 
+  maschineSperre = xSemaphoreCreateMutex();
   ladeGespeichertenZustand();
+  Serial.printf("[licht] Start: %s\n", neustartGrund());
+  xTaskCreatePinnedToCore(renderSchleife, "licht", 4096, nullptr, 5, &renderTask, 1);
 
+  diagnose.start();
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(GERAETENAME);
+  WiFi.setSleep(false);  // kein Stromsparen: sonst verzögerte/verlorene Pakete bei schwachem Empfang
   WiFi.setAutoReconnect(true);
   WiFi.begin(WLAN_SSID, WLAN_PASS);
 
@@ -278,8 +356,10 @@ void setup() {
   ArduinoOTA.setPassword(OTA_PASSWORT);
   ArduinoOTA.onStart([]() {
     // während des Updates alles dunkel
+    vTaskSuspend(renderTask);
     for (int i = 0; i < ANZ_ZONEN; i++) ledcWrite(PINS[i], PWM_INVERTIERT ? PWM_MAX : 0);
   });
+  ArduinoOTA.onError([](ota_error_t) { vTaskResume(renderTask); });
   ArduinoOTA.begin();
 
   String pfad = String("/ws/geraet?rolle=licht&fw=") + FW_VERSION;
@@ -290,11 +370,9 @@ void setup() {
 }
 
 void loop() {
-  static uint32_t naechstesBild = 0;
-  static uint32_t naechsterStatus = 0;
+  static uint32_t naechsterStatus = 0, naechsteWerte = 0;
   static bool otaBereit = false;
-
-  leseUart();
+  diagnose.schleifeStart();
 
   if (WiFi.status() == WL_CONNECTED) {
     if (!otaBereit) {
@@ -308,22 +386,6 @@ void loop() {
   }
 
   uint32_t jetzt = millis();
-  if ((int32_t)(jetzt - naechstesBild) >= 0) {
-    naechstesBild = jetzt + 10;  // 100 Hz
-    float werte[MAX_ZONEN];
-    maschine.berechne(jetzt, werte);
-    schreibePwm(werte);
-    memcpy(letzteWerte, werte, sizeof(float) * ANZ_ZONEN);
-    bilder++;
-  }
-
-  if (jetzt - bilderZeit >= 1000) {
-    fps = bilder * 1000.0f / (jetzt - bilderZeit);
-    bilder = 0;
-    bilderZeit = jetzt;
-  }
-
-  static uint32_t naechsteWerte = 0;
   if (wsVerbunden && vorschau && (int32_t)(jetzt - naechsteWerte) >= 0) {
     naechsteWerte = jetzt + 100;  // 10 Hz reichen für die Vorschau
     sendeWerte();
@@ -342,14 +404,6 @@ void loop() {
     zuSpeichern = String();
   }
 
-  // ESP#1 sendet regelmäßig ein Lebenszeichen an den Sound-ESP
-  static uint32_t naechsterHerzschlag = 0;
-  if ((int32_t)(jetzt - naechsterHerzschlag) >= 0) {
-    naechsterHerzschlag = jetzt + 1000;
-    uint8_t buf[8];
-    size_t n = baueRahmen(MSG_HERZSCHLAG, nullptr, 0, buf);
-    SoundUart.write(buf, n);
-  }
-
-  delay(1);
+  diagnose.schleifeEnde();
+  delay(2);
 }

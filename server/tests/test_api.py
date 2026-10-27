@@ -191,3 +191,15 @@ def test_mqtt_discovery_eindeutig(client):
     ids = [c["unique_id"] for _, _, c in e]
     assert len(ids) == len(set(ids))
     assert any(k == "button" and "gewitterfront" in c["command_topic"] for k, _, c in e)
+
+
+def test_neustart_nach_absturz_wird_protokolliert(client):
+    ws = client.websocket_connect("/ws/geraet?rolle=licht&fw=1.2.0")
+    ws.__enter__()
+    try:
+        ws.send_json({"t": "hallo", "rolle": "licht", "fw": "1.2.0", "neustart_grund": "Watchdog (Task)", "neustart_normal": False})
+        warte_auf(ws, "zustand")
+        texte = [e["text"] for e in client.get("/api/status").json()["protokoll"]]
+        assert "Licht-ESP ist neu gestartet: Watchdog (Task)" in texte
+    finally:
+        ws.__exit__(None, None, None)

@@ -257,6 +257,9 @@ class Zentrale:
         t = msg.get("t")
         if t == "hallo":
             g.hallo = msg
+            if msg.get("neustart_normal") is False:
+                name = "Licht" if g.rolle == "licht" else "Sound"
+                self.protokollieren(f"{name}-ESP ist neu gestartet: {msg.get('neustart_grund', '?')}", "fehler")
             if g.rolle == "licht":
                 await self.licht.konfigurieren(self.einst.licht)
                 await self.licht.zustand(self.licht_effektiv(), temp=self.overlay is not None)

@@ -141,10 +141,11 @@ pio run -d sound -t upload
 pio device monitor -d sound
 ```
 
-Updates für den Licht-ESP gehen später auch per WLAN:
+Spätere Updates gehen bei beiden ESPs per WLAN (in `config.h` steht dafür `OTA_PASSWORT`):
 
 ```bash
-SPUK_LICHT_IP=<IP des Licht-ESP> SPUK_OTA_PASSWORT=<OTA_PASSWORT aus config.h> pio run -d licht -e licht_ota -t upload
+SPUK_LICHT_IP=<IP des Licht-ESP> SPUK_OTA_PASSWORT=<OTA_PASSWORT> pio run -d licht -e licht_ota -t upload
+SPUK_SOUND_IP=<IP des Sound-ESP> SPUK_OTA_PASSWORT=<OTA_PASSWORT> pio run -d sound -e sound_ota -t upload
 ```
 
 (In der fish-Shell: `env SPUK_LICHT_IP=… SPUK_OTA_PASSWORT=… pio run …`)
@@ -248,6 +249,7 @@ rest_command:
 
 | Problem | Ursache / Lösung |
 |---|---|
+| ESP startet neu / hängt | *Einstellungen → Geräte*: Startgrund (Absturz, Watchdog, Unterspannung), WLAN-Trennungen und Hänger stehen dort; ungewöhnliche Neustarts auch im Protokoll. Unterspannung: Netzteil/USB-Kabel prüfen. Viele WLAN-Trennungen: ESP näher an den Access Point. |
 | Punkt „Licht“/„Sound“ oben ist rot | ESP nicht verbunden. Seriellen Monitor öffnen (`pio device monitor -d licht`): WLAN-Daten und `SERVER_HOST`/`SERVER_PORT` in `config.h` prüfen. |
 | Keine Live-Vorschau | Licht-ESP offline (siehe oben). |
 | „kein Signal vom Sound-ESP“ bei *Geräte* | UART-Kabel prüfen: TX ↔ RX gekreuzt? GND verbunden? |
@@ -256,7 +258,7 @@ rest_command:
 | Ton stottert, „Aussetzer“ zählen hoch | WLAN-Empfang am Sound-ESP zu schwach (RSSI unter −75 dBm) – näher an den Access Point oder externe Antenne. |
 | Zone flackert dunkel / leuchtet nicht ganz aus | Modul schaltet nicht sauber: `PWM_FREQUENZ` in `config.h` senken (z. B. 500). PWM/GND richtig gesteckt? Montageplan: Spannungsabfall zu hoch? |
 | Ganze Zone falsch herum (an = aus) | `PWM_INVERTIERT 1` in `config.h`. |
-| Effekt-Upload: „Speicher voll“ | Der Sound-ESP hat ca. 2,2 MB ≈ 3 Minuten Effekte. Lange Sounds kürzen oder löschen. |
+| Effekt-Upload: „Speicher voll“ | Der Sound-ESP hat ca. 1,2 MB ≈ 2 Minuten Effekte. Lange Sounds kürzen oder löschen. |
 | Auslöser reagiert nicht | *Einstellungen → Auslöser*: Status „verbunden“? Auslöser aktiv und gespeichert? Sperrzeit, Gruselstufe und „Nur wenn die Show läuft“ beachten. „Jetzt testen“ prüft Sound und Licht. Server-Log in Portainer ansehen. |
 | Server-Log | Portainer → Container `spukzentrale` → Logs. Mehr Details: Umgebungsvariable `SPUK_LOGLEVEL=DEBUG`. |
 

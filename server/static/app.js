@@ -812,7 +812,7 @@ bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
     const s = g.status || {};
     const versionWarnung = g.fw !== S.version ? ` · ⚠️ Firmware ${esc(g.fw)} ≠ Server ${esc(S.version)}` : "";
     const audioDiagnose = rolle === "sound" ? `
-      <div style="margin-top:10px;padding:10px;border:1px solid var(--linie);border-radius:8px;background:var(--karte);">
+      <div style="margin-top:10px;padding:10px;border:1px solid var(--rand);border-radius:8px;background:var(--karte);">
         <strong>Audio-Diagnose</strong>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px;">
           <div><small>Musikstream</small><div>${s.musik ? (s.musik_spielt ? "Läuft" : "Verbindet …") : "Aus"}</div></div>
@@ -830,11 +830,19 @@ bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
     const geraeteDetails = rolle === "licht"
       ? `${s.fps ?? "?"} Bilder/s · ${s.uart ? "Kabel zum Sound-ESP ok" : "⚠️ kein Signal vom Sound-ESP"}`
       : `${s.uart ? "Kabel ok" : "⚠️ kein Signal vom Licht-ESP"}`;
+    // Stabilität: Neustart-Grund, WLAN-Trennungen, längster Hänger der Hauptschleife (seit dem letzten Status)
+    const stabil = s.neustart_grund === undefined ? "" : [
+      `Start: ${esc(s.neustart_grund)}${["Strom an", "Reset-Taste", "Neustart"].includes(s.neustart_grund) ? "" : " ⚠️"}`,
+      `WLAN-Trennungen: ${s.wlan_trennungen ?? 0}${s.wlan_trennungen ? ` (Grund ${s.wlan_grund})` : ""}`,
+      `Hänger: ${s.schleife_max_ms ?? "?"} ms${(s.schleife_max_ms ?? 0) > 500 ? " ⚠️" : ""}${s.haenger_1s ? `, ${s.haenger_1s}× über 1 s` : ""}`,
+      ...(rolle === "licht" && s.render_max_us !== undefined ? [`Licht-Takt max. ${(s.render_max_us / 1000).toFixed(1)} ms`] : []),
+    ].join(" · ");
     return `
       <li>
         <div class="name">${titel} <span class="marke orange">online</span>
           <small>IP ${esc(g.ip)} · FW ${esc(g.fw)}${versionWarnung} · WLAN ${s.rssi ?? "?"} dBm · Speicher frei ${s.heap ? Math.round(s.heap / 1024) + " KB" : "?"}</small>
           <small>${geraeteDetails}</small>
+          ${stabil ? `<small>${stabil}</small>` : ""}
           ${audioDiagnose}
         </div>
         <button type="button" class="klein" data-aktion="neustart" data-rolle="${rolle}">Neustart</button>

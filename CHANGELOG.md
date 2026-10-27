@@ -3,6 +3,24 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.2.0] – 2026-10-27
+
+### Behoben
+- **Sound-ESP: Aussetzer und Krachen im Ambiente.** Der Decoder durfte erst nachlegen, wenn nur noch
+  ~20 ms Musik im Puffer waren, und wurde auf Kern 0 von WLAN/TCP verdrängt (gemessen: 41 Aussetzer/min
+  bei vollem Stream-Puffer). Jetzt: Decoder auf Kern 1, PCM-Puffer 16 KB, Nachlegen in 10-ms-Stücken,
+  bei Unterlauf weich aus- und wieder einblenden statt Knacken.
+- **Licht-ESP: Licht friert ein / „kein Signal vom Licht-ESP“.** Bei schwachem WLAN hingen
+  Sendevorgänge die Hauptschleife auf, samt Effekten und Lebenszeichen. Effekte, PWM und UART laufen jetzt
+  in einer eigenen Task, unabhängig vom Netz; WLAN-Stromsparen aus.
+
+### Neu
+- Sound-ESP: Updates über WLAN (OTA). **Einmalig per USB flashen** – die Flash-Aufteilung ändert sich
+  (Effekt-Speicher 1,25 MB statt 2,25 MB, wird danach automatisch vom Server neu befüllt).
+  In `include/config.h` muss `#define OTA_PASSWORT "…"` stehen.
+- Diagnose beider ESPs: Neustart-Grund (Absturz, Watchdog, Unterspannung …), WLAN-Trennungen mit Grund,
+  längster Hänger der Hauptschleife; ungewöhnliche Neustarts landen im Protokoll.
+
 ## [1.1.0] – 2026-10-25
 
 ### Neu
