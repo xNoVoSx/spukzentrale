@@ -141,16 +141,16 @@ pio run -d sound -t upload
 pio device monitor -d sound
 ```
 
-Spätere Updates gehen bei beiden ESPs per WLAN (in `config.h` steht dafür `OTA_PASSWORT`):
+Updates für den Licht-ESP gehen später auch per WLAN (`OTA_PASSWORT` aus `config.h`); der Sound-ESP wird
+immer per USB geflasht (sein Flash gehört den Effekt-Sounds):
 
 ```bash
 SPUK_LICHT_IP=<IP des Licht-ESP> SPUK_OTA_PASSWORT=<OTA_PASSWORT> pio run -d licht -e licht_ota -t upload
-SPUK_SOUND_IP=<IP des Sound-ESP> SPUK_OTA_PASSWORT=<OTA_PASSWORT> pio run -d sound -e sound_ota -t upload
 ```
 
 (In der fish-Shell: `env SPUK_LICHT_IP=… SPUK_OTA_PASSWORT=… pio run …`)
 
-Beim Update holt sich der ESP die Firmware über TCP-Port **14933** vom PC ab. Läuft auf dem PC eine Firewall
+Beim WLAN-Update holt sich der Licht-ESP die Firmware über TCP-Port **14933** vom PC ab. Läuft auf dem PC eine Firewall
 (z. B. ufw), diesen Port für die ESPs freigeben: `sudo ufw allow from <IP des ESP> to any port 14933 proto tcp`.
 
 Die Effekt-Sounds lädt der Sound-ESP selbst vom Server – dafür ist kein extra Upload nötig.
@@ -253,6 +253,7 @@ rest_command:
 | Problem | Ursache / Lösung |
 |---|---|
 | ESP startet neu / hängt | *Einstellungen → Geräte*: Startgrund (Absturz, Watchdog, Unterspannung), WLAN-Trennungen und Hänger stehen dort; ungewöhnliche Neustarts auch im Protokoll. Unterspannung: Netzteil/USB-Kabel prüfen. Viele WLAN-Trennungen: ESP näher an den Access Point. |
+| WLAN instabil, Updates/Downloads brechen ab | Im Router nachsehen, wie gut der **Access Point die ESPs** hört (UniFi: „Signal“ des Clients). Die Platinenantennen einfacher ESP32-Boards senden schwach; unter etwa −80 dBm wird es unzuverlässig. Abhilfe: Access Point näher, ESP32 mit externer Antenne (WROOM-32U), ESPs nicht direkt nebeneinander. |
 | Punkt „Licht“/„Sound“ oben ist rot | ESP nicht verbunden. Seriellen Monitor öffnen (`pio device monitor -d licht`): WLAN-Daten und `SERVER_HOST`/`SERVER_PORT` in `config.h` prüfen. |
 | Keine Live-Vorschau | Licht-ESP offline (siehe oben). |
 | „kein Signal vom Sound-ESP“ bei *Geräte* | UART-Kabel prüfen: TX ↔ RX gekreuzt? GND verbunden? |
@@ -261,7 +262,7 @@ rest_command:
 | Ton stottert, „Aussetzer“ zählen hoch | WLAN-Empfang am Sound-ESP zu schwach (RSSI unter −75 dBm) – näher an den Access Point oder externe Antenne. |
 | Zone flackert dunkel / leuchtet nicht ganz aus | Modul schaltet nicht sauber: `PWM_FREQUENZ` in `config.h` senken (z. B. 500). PWM/GND richtig gesteckt? Montageplan: Spannungsabfall zu hoch? |
 | Ganze Zone falsch herum (an = aus) | `PWM_INVERTIERT 1` in `config.h`. |
-| Effekt-Upload: „Speicher voll“ | Der Sound-ESP hat ca. 1,2 MB ≈ 2 Minuten Effekte. Lange Sounds kürzen oder löschen. |
+| Effekt-Upload: „Speicher voll“ | Der Sound-ESP hat ca. 2,2 MB ≈ 3 Minuten Effekte. Lange Sounds kürzen oder löschen. |
 | Auslöser reagiert nicht | *Einstellungen → Auslöser*: Status „verbunden“? Auslöser aktiv und gespeichert? Sperrzeit, Gruselstufe und „Nur wenn die Show läuft“ beachten. „Jetzt testen“ prüft Sound und Licht. Server-Log in Portainer ansehen. |
 | Server-Log | Portainer → Container `spukzentrale` → Logs. Mehr Details: Umgebungsvariable `SPUK_LOGLEVEL=DEBUG`. |
 

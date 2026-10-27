@@ -275,6 +275,9 @@ class Zentrale:
         elif t == "status":
             g.status = {k: v for k, v in msg.items() if k != "t"}
             self.an_ui({"t": "geraet_status", "rolle": g.rolle, "status": g.status})
+        elif t == "log":
+            name = "Licht" if g.rolle == "licht" else "Sound"
+            self.protokollieren(f"{name}-ESP: {str(msg.get('text', ''))[:200]}", "geraet")
         elif t == "werte":
             self.an_ui({"t": "werte", "v": msg.get("v", [])})
         elif t == "fx_fehlt":

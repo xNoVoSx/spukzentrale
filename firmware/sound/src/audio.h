@@ -57,6 +57,11 @@ void fxStopAlle();
 void fxSperren(bool gesperrt);
 
 AudioStatus audioStatus();
+
+// Fern-Log: kurze Meldung an den Server (erscheint im Protokoll der Oberfläche). Aus jeder Task aufrufbar,
+// blockiert nie; loop() schickt die Meldungen per WebSocket ab.
+void fernlog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+bool fernlogHolen(char* ziel, size_t laenge);
 void fxDateiPfad(const char* id, char* ziel, size_t laenge);
 
 }  // namespace spuk

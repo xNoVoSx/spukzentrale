@@ -3,6 +3,20 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.2.1] – 2026-10-27
+
+### Geändert
+- **Sound-ESP wieder ohne OTA** (Updates per USB) und mit der Flash-Aufteilung von 1.1.0 (2,25 MB für
+  Effekte). Mit OTA hing der Sound-ESP nach abgebrochenen Updates, und die Effekt-Downloads scheiterten;
+  das WLAN der diymore-Boards ist in der Senderichtung sehr schwach (UniFi: −93 dBm, „Signal Balance:
+  Poor“). Effekt-Download wieder mit HTTPClient wie in 1.1.0, mit genauer Fehlermeldung.
+- Licht-ESP: mDNS aus (OTA per IP bleibt).
+- Beide: Hostname „spuk-licht“/„spuk-sound“ wird jetzt wirklich gesetzt (vorher „esp32-…“).
+
+### Neu
+- Fern-Log: Der Sound-ESP meldet Stream-Abbrüche, Datenpausen, Download-Fehler und Hänger der
+  Hauptschleife (mit Abschnitt) ins Protokoll der Oberfläche.
+
 ## [1.2.0] – 2026-10-27
 
 ### Behoben

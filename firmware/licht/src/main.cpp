@@ -29,7 +29,7 @@
 #include "protokoll.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "1.2.0"
+#define FW_VERSION "1.2.1"
 #endif
 
 using namespace spuk;
@@ -346,14 +346,15 @@ void setup() {
   xTaskCreatePinnedToCore(renderSchleife, "licht", 4096, nullptr, 5, &renderTask, 1);
 
   diagnose.start();
+  WiFi.setHostname(GERAETENAME);  // vor WiFi.mode(), sonst meldet sich der ESP als „esp32-…“
   WiFi.mode(WIFI_STA);
-  WiFi.setHostname(GERAETENAME);
   WiFi.setSleep(false);  // kein Stromsparen: sonst verzögerte/verlorene Pakete bei schwachem Empfang
   WiFi.setAutoReconnect(true);
   WiFi.begin(WLAN_SSID, WLAN_PASS);
 
   ArduinoOTA.setHostname(GERAETENAME);
   ArduinoOTA.setPassword(OTA_PASSWORT);
+  ArduinoOTA.setMdnsEnabled(false);  // wir sprechen die ESPs per IP an; mDNS verarbeitet sonst jeden Multicast im Netz
   ArduinoOTA.onStart([]() {
     // während des Updates alles dunkel
     vTaskSuspend(renderTask);

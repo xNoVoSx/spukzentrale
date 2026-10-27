@@ -59,6 +59,8 @@ HardwareSerial* uart = nullptr;
 StreamBufferHandle_t mp3Puffer = nullptr;
 StreamBufferHandle_t pcmPuffer = nullptr;
 QueueHandle_t befehle = nullptr;
+QueueHandle_t logQueue = nullptr;
+constexpr size_t LOG_LAENGE = 120;
 
 struct Befehl {
   enum Typ : uint8_t { START, STOPP_ALLE } typ;
@@ -107,6 +109,8 @@ void netzTask(void*) {
   WiFiClient c;
   ChunkDekoder chunks;
   uint32_t gen = 0;
+  uint32_t letzteDaten = 0;
+  bool pauseGemeldet = false;
   for (;;) {
     if (!musikSoll || WiFi.status() != WL_CONNECTED) {
       if (c.connected()) c.stop();
@@ -123,6 +127,7 @@ void netzTask(void*) {
       z = ziel;
       portEXIT_CRITICAL(&sperre);
       if (!c.connect(z.host, z.port, 3000)) {
+        fernlog("Stream: keine Verbindung zu %s:%u", z.host, z.port);
         vTaskDelay(pdMS_TO_TICKS(1500));
         continue;
       }
@@ -132,14 +137,26 @@ void netzTask(void*) {
                z.pfad, z.host);
       bool chunked = false;
       if (!leseKopf(c, chunked)) {
+        fernlog("Stream: ungültige Antwort vom Server");
         c.stop();
         vTaskDelay(pdMS_TO_TICKS(1500));
         continue;
       }
       chunks.start(chunked);
       netzVerbunden = true;
+      letzteDaten = millis();
+      fernlog("Stream verbunden%s", chunked ? " (chunked)" : "");
     }
     int roh = c.read(buf, sizeof(buf));
+    if (roh > 0 && pauseGemeldet) {
+      fernlog("Stream: Daten kommen wieder (Pause %lu ms)", (unsigned long)(millis() - letzteDaten));
+      pauseGemeldet = false;
+    }
+    if (roh > 0) letzteDaten = millis();
+    if (roh <= 0 && !pauseGemeldet && millis() - letzteDaten > 2000 && xStreamBufferSpacesAvailable(mp3Puffer) > 4096) {
+      fernlog("Stream: seit 2 s keine Daten (Puffer %u %%)", (unsigned)(xStreamBufferBytesAvailable(mp3Puffer) * 100 / MP3_PUFFER));
+      pauseGemeldet = true;
+    }
     if (roh <= 0) {
       vTaskDelay(pdMS_TO_TICKS(5));
       continue;
@@ -480,6 +497,23 @@ void audioTask(void*) {
 // ---------------------------------------------------------------------------
 // Öffentliche Schnittstelle
 // ---------------------------------------------------------------------------
+void fernlog(const char* fmt, ...) {
+  if (!logQueue) return;
+  char text[LOG_LAENGE];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(text, sizeof(text), fmt, args);
+  va_end(args);
+  xQueueSend(logQueue, text, 0);  // Queue voll -> Meldung verwerfen, nie blockieren
+}
+
+bool fernlogHolen(char* ziel, size_t laenge) {
+  char text[LOG_LAENGE];
+  if (!logQueue || xQueueReceive(logQueue, text, 0) != pdTRUE) return false;
+  strlcpy(ziel, text, laenge);
+  return true;
+}
+
 void fxDateiPfad(const char* id, char* zielPfad, size_t laenge) { snprintf(zielPfad, laenge, "%s/%s.wav", FX_ORDNER, id); }
 
 void audioStart(int bck, int lck, int din, HardwareSerial* u) {
@@ -487,6 +521,7 @@ void audioStart(int bck, int lck, int din, HardwareSerial* u) {
   mp3Puffer = xStreamBufferCreate(MP3_PUFFER, 1);
   pcmPuffer = xStreamBufferCreate(PCM_PUFFER, 1);
   befehle = xQueueCreate(8, sizeof(Befehl));
+  logQueue = xQueueCreate(16, LOG_LAENGE);
 
   i2s_chan_config_t kanal = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
   kanal.dma_desc_num = DMA_BLOECKE;

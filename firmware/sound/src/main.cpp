@@ -6,10 +6,9 @@
 //  - Ausgabe über I2S-DAC (PCM5102A) an den AUX-Eingang der Box
 //  - Licht-ESP per UART mit Hüllkurve und Licht-Aktionen versorgen (synchron zum Ton)
 //  - Effekt-Dateien mit dem Server abgleichen (fx_sync)
-//  - Updates über WLAN (ArduinoOTA)
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <ArduinoOTA.h>
+#include <HTTPClient.h>
 #include <LittleFS.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
@@ -21,17 +20,12 @@
 #include "config.example.h"
 #endif
 
-#ifndef OTA_PASSWORT
-#error "In include/config.h fehlt: #define OTA_PASSWORT \"…\" (Passwort für Updates über WLAN, siehe config.example.h)"
-#endif
-
 #include "audio.h"
-#include "chunked.h"
 #include "diagnose.h"
 #include "protokoll.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "1.2.0"
+#define FW_VERSION "1.2.1"
 #endif
 
 using namespace spuk;
@@ -60,81 +54,55 @@ static uint32_t fxFreiKb() { return (LittleFS.totalBytes() - LittleFS.usedBytes(
 // ---------------------------------------------------------------------------
 // Effekt-Dateien abgleichen
 // ---------------------------------------------------------------------------
-// Kopfzeilen der HTTP-Antwort lesen: true bei Status 200; chunked = Transfer-Encoding: chunked
-static bool leseHttpKopf(WiFiClient& c, bool& chunked) {
-  chunked = false;
-  bool erste = true, ok = false;
-  String zeile;
-  uint32_t bis = millis() + 8000;
-  while (millis() < bis) {
-    int b = c.read();
-    if (b < 0) {
-      if (!c.connected()) return false;
-      delay(2);
-      continue;
-    }
-    if (b == '\r') continue;
-    if (b != '\n') {
-      if (zeile.length() < 200) zeile += (char)b;
-      continue;
-    }
-    if (erste) {
-      ok = zeile.indexOf(" 200") > 0;
-      erste = false;
-    } else if (zeile.length() == 0) {
-      return ok;
-    } else {
-      zeile.toLowerCase();
-      if (zeile.startsWith("transfer-encoding:") && zeile.indexOf("chunked") > 0) chunked = true;
-    }
-    zeile = "";
+// Datei per HTTP vom Server laden (wie in 1.1.0). fehler: was schiefging (für die Meldung an den Server)
+static bool ladeDatei(const String& pfad, const char* zielPfad, uint32_t groesse, String& fehler) {
+  HTTPClient http;
+  http.setTimeout(8000);
+  String url = String("http://") + SERVER_HOST + ":" + SERVER_PORT + pfad;
+  if (!http.begin(url)) {
+    fehler = "URL ungültig";
+    return false;
   }
-  return false;
-}
-
-// Datei per HTTP vom Server laden (ohne HTTPClient: der zieht den TLS-Stack mit, den wir im Heimnetz nicht brauchen)
-static bool ladeDatei(const String& pfad, const char* zielPfad, uint32_t groesse) {
-  WiFiClient c;
-  if (!c.connect(SERVER_HOST, SERVER_PORT, 5000)) return false;
-  c.printf("GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", pfad.c_str(), SERVER_HOST);
-  bool chunked = false;
-  if (!leseHttpKopf(c, chunked)) {
-    c.stop();
+  int code = http.GET();
+  if (code != 200) {
+    fehler = String("HTTP ") + code + " (" + http.errorToString(code) + ")";
+    http.end();
     return false;
   }
   String tmp = String(zielPfad) + ".tmp";
   File f = LittleFS.open(tmp, "w");
   if (!f) {
-    c.stop();
+    fehler = "Datei " + tmp + " lässt sich nicht anlegen";
+    http.end();
     return false;
   }
-  ChunkDekoder chunks;
-  chunks.start(chunked);
+  WiFiClient* s = http.getStreamPtr();
   static uint8_t buf[1024];
   uint32_t geschrieben = 0;
   uint32_t letzteDaten = millis();
-  while (geschrieben < groesse && millis() - letzteDaten < 8000 && !chunks.fehler() && !chunks.ende()) {
-    int roh = c.read(buf, sizeof(buf));
-    if (roh > 0) {
-      size_t n = chunks.verarbeite(buf, roh, buf);
-      if (n > groesse - geschrieben) n = groesse - geschrieben;
-      if (f.write(buf, n) != n) break;
+  while (geschrieben < groesse && millis() - letzteDaten < 8000) {
+    int n = s->read(buf, min((uint32_t)sizeof(buf), groesse - geschrieben));
+    if (n > 0) {
+      if (f.write(buf, n) != (size_t)n) break;
       geschrieben += n;
       letzteDaten = millis();
-    } else if (!c.connected()) {
-      break;
     } else {
       delay(2);
     }
   }
   f.close();
-  c.stop();
+  http.end();
   if (geschrieben != groesse) {
+    fehler = String("nur ") + geschrieben + " von " + groesse + " Byte";
     LittleFS.remove(tmp);
     return false;
   }
   LittleFS.remove(zielPfad);
-  return LittleFS.rename(tmp, zielPfad);
+  if (!LittleFS.rename(tmp, zielPfad)) {
+    fehler = "Umbenennen fehlgeschlagen";
+    return false;
+  }
+  return true;
 }
 
 static void syncTask(void* arg) {
@@ -181,11 +149,15 @@ static void syncTask(void* arg) {
       syncMeldung = "Flash voll";
       continue;
     }
-    if (ladeDatei(auftrag->basis + id, pfad, groesse)) {
+    String fehler;
+    uint32_t t0 = millis();
+    if (ladeDatei(auftrag->basis + id, pfad, groesse, fehler)) {
       syncGeladen++;
     } else {
       syncFehler++;
-      if (!syncMeldung.length()) syncMeldung = String("Download fehlgeschlagen: ") + id;
+      Serial.printf("[sound] Effekt %s: %s (%u ms)\n", id, fehler.c_str(), millis() - t0);
+      fernlog("Effekt %s: %s (%lu ms)", id, fehler.c_str(), (unsigned long)(millis() - t0));
+      if (!syncMeldung.length()) syncMeldung = String(id) + ": " + fehler + " (" + (millis() - t0) + " ms)";
     }
   }
 
@@ -355,21 +327,11 @@ void setup() {
   audioStart(I2S_BCK_PIN, I2S_LCK_PIN, I2S_DIN_PIN, &LichtUart);
 
   diagnose.start();
+  WiFi.setHostname(GERAETENAME);  // vor WiFi.mode(), sonst meldet sich der ESP als „esp32-…“
   WiFi.mode(WIFI_STA);
-  WiFi.setHostname(GERAETENAME);
   WiFi.setSleep(false);  // kein Bluetooth im Spiel: volle WLAN-Leistung für den Stream
   WiFi.setAutoReconnect(true);
   WiFi.begin(WLAN_SSID, WLAN_PASS);
-
-  ArduinoOTA.setHostname(GERAETENAME);
-  ArduinoOTA.setPassword(OTA_PASSWORT);
-  ArduinoOTA.onStart([]() {
-    // Ton aus und keine Effekt-Dateien öffnen, solange der Flash beschrieben wird
-    musikStop();
-    fxSperren(true);
-  });
-  ArduinoOTA.onError([](ota_error_t) { fxSperren(false); });
-  ArduinoOTA.begin();
 
   String pfad = String("/ws/geraet?rolle=sound&fw=") + FW_VERSION;
   ws.begin(SERVER_HOST, SERVER_PORT, pfad);
@@ -378,22 +340,43 @@ void setup() {
   ws.enableHeartbeat(15000, 3000, 2);
 }
 
+// Hängt ein Abschnitt der Schleife länger als 500 ms, ans Fern-Log melden (wo genau es klemmt)
+static void abschnitt(const char* name, uint32_t t0) {
+  uint32_t d = millis() - t0;
+  if (d > 500) fernlog("Hänger in %s: %lu ms", name, (unsigned long)d);
+}
+
 void loop() {
   static uint32_t naechsterStatus = 0;
   static bool wlanGemeldet = false;
   diagnose.schleifeStart();
 
+  uint32_t t0 = millis();
   leseUart();
+  abschnitt("UART", t0);
 
   if (WiFi.status() == WL_CONNECTED) {
     if (!wlanGemeldet) {
       Serial.printf("[sound] WLAN ok, IP %s\n", WiFi.localIP().toString().c_str());
       wlanGemeldet = true;
     }
-    ArduinoOTA.handle();
+    t0 = millis();
     ws.loop();
+    abschnitt("WebSocket", t0);
   } else {
     wlanGemeldet = false;
+  }
+
+  // Fern-Log abschicken
+  if (wsVerbunden) {
+    char text[128];
+    for (int i = 0; i < 4 && fernlogHolen(text, sizeof(text)); i++) {
+      JsonDocument d;
+      d["t"] = "log";
+      d["text"] = text;
+      sende(d);
+      Serial.printf("[sound] %s\n", text);
+    }
   }
 
   if (syncFertig && wsVerbunden) {
@@ -413,7 +396,9 @@ void loop() {
   uint32_t jetzt = millis();
   if (wsVerbunden && (int32_t)(jetzt - naechsterStatus) >= 0) {
     naechsterStatus = jetzt + 2000;
+    t0 = millis();
     sendeStatus();
+    abschnitt("Status", t0);
   }
 
   diagnose.schleifeEnde();

@@ -14,7 +14,6 @@
 
 // --- Gerät ---
 #define GERAETENAME "spuk-sound"     // Hostname im WLAN
-#define OTA_PASSWORT "spukota"        // Passwort für Updates über WLAN
 
 // --- I2S-DAC PCM5102A (Ausgang an AUX der Box) ---
 #define I2S_BCK_PIN 26
