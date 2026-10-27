@@ -410,7 +410,7 @@ void audioTask(void*) {
     // --- Ambiente ---
     size_t bytes = 0;
     size_t pcmVerfuegbar = musikSoll ? xStreamBufferBytesAvailable(pcmPuffer) : 0;
-    if (pcmVerfuegbar < pcmMinVerfuegbar) pcmMinVerfuegbar = pcmVerfuegbar;
+    if (musikSoll && pcmVerfuegbar < pcmMinVerfuegbar) pcmMinVerfuegbar = pcmVerfuegbar;
     // Nur vollständige 10-ms-Blöcke entnehmen. Teilblöcke bleiben im StreamBuffer,
     // damit Decoder-Jitter nicht mitten in einem Audioblock in Stille umgewandelt wird.
     if (musikSoll && pcmVerfuegbar >= sizeof(musik))
