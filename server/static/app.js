@@ -458,6 +458,7 @@ bereich("sounds-ambiente", "sounds", ["medien", "zustand", "daten"], () => {
     return `
       <li>
         <div class="name">${laeuft ? "▶️ " : ""}${esc(s.name)}<small>${dauer(s.dauer_s * 1000)}</small></div>
+        <button class="klein symbol lila" data-aktion="musik-spielen" data-id="${s.id}" title="Jetzt draußen spielen">▶</button>
         <button class="klein symbol" data-aktion="musik-hoch" data-i="${i}" ${i ? "" : "disabled"} title="Nach oben">↑</button>
         <button class="klein symbol" data-aktion="vorhoeren" data-url="/api/musik/${s.id}/datei" title="Im Browser anhören">🎧</button>
         <button class="klein symbol" data-aktion="musik-umbenennen" data-id="${s.id}" title="Umbenennen">✏️</button>
@@ -1108,6 +1109,7 @@ const AKTIONEN = {
   show: () => api("POST", "/api/show", { an: !S.zustand.licht.an }),
   gruselstufe: (el) => api("POST", "/api/gruselstufe", { stufe: Number(el.dataset.stufe) }),
   "ambiente-weiter": () => api("POST", "/api/ambiente/weiter"),
+  "musik-spielen": (el) => api("POST", `/api/ambiente/spielen/${el.dataset.id}`),
   "alles-stopp": () => api("POST", "/api/stopp"),
   "szene-start": (el) => api("POST", `/api/szenen/${el.dataset.id}/start`),
   "szene-stopp": () => api("POST", "/api/szenen/stopp"),

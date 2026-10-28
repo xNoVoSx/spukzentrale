@@ -95,3 +95,22 @@ def test_vorlauf_folgt_dem_puffer_wunsch():
     assert a.vorlauf_s == 15
     a._wunsch[q] = 60                       # gedeckelt: der Rückblick muss den Vorlauf noch fassen
     assert a.vorlauf_s == amb.RUECKBLICK_MAX_S - 2
+
+
+async def test_springen_startet_mit_dem_stueck_und_geht_danach_weiter(ton):
+    m = MedienVerwaltung()
+    eins = await _stueck(m, ton, "eins", 220, 1.0)
+    zwei = await _stueck(m, ton, "zwei", 330, 1.0)
+    drei = await _stueck(m, ton, "drei", 440, 1.0)
+    m.daten.playlist.ueberblend_s = 0.0
+    wechsel: list = []
+    a = Ambiente(m, bei_wechsel=wechsel.append)
+    await a.springen(zwei)                      # Stream läuft noch nicht: Wunsch gilt für den Start
+    assert a.jetzt == "zwei" and a.jetzt_id == zwei
+    frames = 0
+    async for block in a._pcm():
+        frames += len(block)
+        if frames > RATE * 3.5:
+            break
+    assert wechsel[:3] == ["zwei", "drei", "eins"]
+    assert a.naechstes_nach(drei) == eins and a.naechstes_nach(None) == eins

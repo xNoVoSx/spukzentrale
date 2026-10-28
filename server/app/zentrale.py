@@ -437,6 +437,26 @@ class Zentrale:
         await self.geraete.senden("sound", {"t": "musik", "aktion": "play" if an else "stop", "pfad": "/stream/ambiente"})
         self._zustand_geaendert()
 
+    async def ambiente_spielen(self, mid: str) -> None:
+        """Ein Stück sofort spielen (Ambiente geht dafür an). Der Stream beginnt neu mit diesem Stück; ein Pi
+        verwirft dazu seinen Vorrat (sonst wäre der Wechsel erst nach puffer_s zu hören)."""
+        if not self.medien.musik(mid):
+            raise ValueError("Dieses Stück gibt es nicht")
+        await self.ambiente.springen(mid)
+        if not self.zustand.ambiente_an:
+            await self.ambiente_schalten(True)
+        else:
+            g = self.geraete.get("sound")
+            if g and g.hallo.get("plattform") == "pi":
+                await g.senden({"t": "musik", "aktion": "sprung", "pfad": "/stream/ambiente"})
+        self._zustand_geaendert()
+
+    async def ambiente_weiter(self) -> None:
+        """Nächstes Stück – sofort zu hören (wie ambiente_spielen mit dem Nachfolger des laufenden Stücks)."""
+        mid = self.ambiente.naechstes_nach(self.ambiente.jetzt_id)
+        if mid and self.zustand.ambiente_an:
+            await self.ambiente_spielen(mid)
+
     async def ton_geaendert(self) -> None:
         await self.sound_konfigurieren()
         self._zustand_geaendert()

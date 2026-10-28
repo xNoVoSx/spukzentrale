@@ -107,6 +107,9 @@ class Mischer(threading.Thread):
     def musik_stop(self) -> None:
         self.befehle.put(("stop", None))
 
+    def musik_sprung(self) -> None:
+        self.befehle.put(("sprung", None))
+
     def fx_start(self, fid: str, vol: int, licht: dict | None) -> bool:
         if not self.effekte.hat(fid):
             return False
@@ -161,6 +164,12 @@ class Mischer(threading.Thread):
             elif art == "stop":
                 if self.ambiente.soll:
                     self.musik_stop_anfrage = True
+            elif art == "sprung":
+                self.musik_stop_anfrage = False
+                if self.ambiente.soll:
+                    self.ambiente.sprung()
+                else:
+                    self.ambiente.play("/stream/ambiente")
             elif art == "fx":
                 fid, vol, licht = arg
                 klang = self.effekte.klang(fid)

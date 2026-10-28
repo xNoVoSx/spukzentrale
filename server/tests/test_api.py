@@ -216,3 +216,24 @@ def test_ambiente_doppelt_einschalten_startet_stream_nicht_neu(client):
         assert warte_auf(sound, "musik")["aktion"] == "stop"   # die nächste musik-Nachricht ist das Stopp
     finally:
         sound.__exit__(None, None, None)
+
+
+def test_stueck_direkt_spielen_springt_beim_pi(client, ton):
+    pfad = ton("eins.wav", "sine=f=220", 2.0)
+    with open(pfad, "rb") as f:
+        mid = client.post("/api/musik", files={"datei": ("eins.wav", f)}).json()["id"]
+    ws = client.websocket_connect("/ws/geraet?rolle=sound&fw=1.3.1")
+    ws.__enter__()
+    try:
+        ws.send_json({"t": "hallo", "rolle": "sound", "fw": "1.3.1", "plattform": "pi"})
+        warte_auf(ws, "fx_sync")
+        r = client.post(f"/api/ambiente/spielen/{mid}")
+        assert r.status_code == 200
+        assert warte_auf(ws, "musik")["aktion"] == "play"           # Ambiente war aus -> geht an
+        client.post(f"/api/ambiente/spielen/{mid}")
+        assert warte_auf(ws, "musik")["aktion"] == "sprung"         # läuft schon -> Pi verwirft seinen Vorrat
+        assert client.get("/api/status").json()["ambiente_jetzt"] == "eins"
+        assert client.post("/api/ambiente/spielen/gibtsnicht").status_code == 404
+    finally:
+        client.post("/api/ambiente", json={"an": False})
+        ws.__exit__(None, None, None)

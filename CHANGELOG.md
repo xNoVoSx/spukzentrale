@@ -3,6 +3,13 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.2] – 2026-10-28
+
+- **Ambiente-Stück direkt starten:** ▶ an jedem Stück (Sounds → Ambiente) bzw. `POST /api/ambiente/spielen/{id}`.
+  Der Server beginnt den Stream neu mit diesem Stück, danach geht die Playlist ab dort weiter; ist Ambiente aus,
+  geht es an. Der Pi verwirft dafür seinen Vorrat (`musik sprung`): altes Stück 0,4 s ausblenden, neues weich
+  einblenden – zu hören nach ~1–1,5 s statt nach 15 s. Auch **„Weiter“** springt jetzt sofort.
+
 ## [1.3.1] – 2026-10-28
 
 - **Licht-Effekt „Musik“ mit Pi neu:** Grundglühen aus der Energie aller Bänder (je Zone leicht verschieden), jeder

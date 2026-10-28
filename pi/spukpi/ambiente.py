@@ -27,6 +27,9 @@ START_S = 1.0             # so viel Vorrat, bevor der Stream (wieder) hörbar wi
 ZURUECK_S = 3.0           # Vorrat, ab dem vom Ersatz zurück auf den Stream geblendet wird
 KNAPP_S = 0.4             # darunter (und keine frischen Daten) -> auf den Ersatz überblenden
 BLENDE_S = 0.4
+SPRUNG_AUS_S = 0.4        # Sprung (Stück direkt gestartet): so schnell klingt das alte aus
+SPRUNG_EIN_S = 0.3        # … und so weich kommt das neue
+SPRUNG_KEIN_ERSATZ_S = 8  # so lange nach einem Sprung nicht auf den Mitschnitt ausweichen (alte Musik)
 SEGMENT_S = 300           # Mitschnitt-Dateien à 5 min
 SEGMENTE = 3
 MP3_BYTES_S = 16000       # 128 kbit/s
@@ -166,6 +169,11 @@ class Ambiente:
         self.neuverbindungen = 0
         self._gen = 0
         self._thread: threading.Thread | None = None
+        # Sprung: altes Stück aus self._alt ausblenden, neuer Stream läuft schon in den (neuen) Vorrat
+        self._alt: PcmVorrat | None = None
+        self._alt_pos = 0
+        self._sprung_zeit = 0.0
+        self._ein = 1.0               # Einblendung nach einem Sprung (1 = voll)
         self._ersatz_thread: threading.Thread | None = None
         self._ersatz_proc: subprocess.Popen | None = None
 
@@ -179,8 +187,23 @@ class Ambiente:
         self._thread = threading.Thread(target=self._netz, args=(self._gen,), name="ambiente", daemon=True)
         self._thread.start()
 
+    def sprung(self) -> None:
+        """Der Server hat den Stream mit einem anderen Stück neu begonnen: Vorrat (altes Stück) ausblenden und
+        verwerfen, sofort neu verbinden – sonst wäre der Wechsel erst nach puffer_s zu hören."""
+        if not self.soll:
+            return
+        self._gen += 1
+        self._alt, self._alt_pos = self.vorrat, 0
+        self.vorrat = PcmVorrat(self.puffer_s + 10)
+        self._sprung_zeit = time.monotonic()
+        self.letzte_daten = 0.0
+        self._thread = threading.Thread(target=self._netz, args=(self._gen,), name="ambiente", daemon=True)
+        self._thread.start()
+        log.info("Ambiente: Sprung – neues Stück")
+
     def stop(self) -> None:
         self.soll = False
+        self._alt = None
         self._gen += 1
         self.vorrat.leeren()
         self._ersatz_stoppen()
@@ -196,7 +219,7 @@ class Ambiente:
             try:
                 antwort = urllib.request.urlopen(url, timeout=10)
                 proc = _dekoder(["-f", "mp3", "-i", "pipe:0"])
-                leser = threading.Thread(target=_pcm_lesen, args=(proc, self.vorrat, laeuft), daemon=True)
+                leser = threading.Thread(target=_pcm_lesen, args=(proc, self.vorrat, laeuft), daemon=True)  # Vorrat dieses Laufs
                 leser.start()
                 self.verbunden = True
                 log.info("Ambiente-Stream verbunden")
@@ -271,11 +294,36 @@ class Ambiente:
         if not self.soll:
             self.quelle = "aus"
             return None
+        if self._alt is not None:                            # Sprung: altes Stück ausklingen lassen
+            alt, gesamt = self._alt, int(SPRUNG_AUS_S * RATE)
+            block = alt.lesen(n) if self.quelle in ("stream", "puffert") else self._block(self.quelle, n)
+            if block is None or self._alt_pos >= gesamt:
+                self._alt = None
+                self._ersatz_stoppen()
+                self._von = None
+                self.quelle = "puffert"
+                self._ein = 0.0
+            else:
+                g = 1.0 - (self._alt_pos + np.arange(n, dtype=np.float32)[:, None]) / gesamt
+                self._alt_pos += n
+                return block * np.clip(g, 0, 1)
+        block = self._lesen_normal(n)
+        if block is not None and self._ein < 1.0:            # nach einem Sprung weich einblenden
+            schritt = n / (SPRUNG_EIN_S * RATE)
+            g = np.clip(self._ein + np.arange(n, dtype=np.float32)[:, None] * schritt / n, 0, 1)
+            self._ein = min(1.0, self._ein + schritt)
+            block = block * g
+        return block
+
+    def _lesen_normal(self, n: int) -> np.ndarray | None:
         frisch = time.monotonic() - self.letzte_daten < 1.0
         vorrat = self.vorrat.sekunden
         q = self.quelle
         if q == "aus":
             q = self.quelle = "puffert"
+        # direkt nach einem Sprung kein Ersatz: der Mitschnitt wäre das alte Stück, lieber kurz still
+        if time.monotonic() - self._sprung_zeit < SPRUNG_KEIN_ERSATZ_S:
+            frisch = True
         # Ersatz vorbereiten, sobald der Stream stockt (Dekoder braucht einen Moment)
         if not frisch and vorrat < KNAPP_S + 2.0:
             self._ersatz_starten()

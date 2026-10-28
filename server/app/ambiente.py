@@ -41,6 +41,8 @@ class Ambiente:
         self.medien = medien
         self.bei_wechsel = bei_wechsel
         self.jetzt: str | None = None        # Name des laufenden Stücks
+        self.jetzt_id: str | None = None     # dessen ID (wie jetzt: erst, wenn es zu hören ist)
+        self._sprung: str | None = None      # dieses Stück als Nächstes, sofort (springen)
         self._zuhoerer: set[asyncio.Queue] = set()
         self._rueckblick: collections.deque[bytes] = collections.deque()
         self._rueckblick_bytes = 0
@@ -65,8 +67,36 @@ class Ambiente:
         return len(self._zuhoerer)
 
     def weiter(self) -> None:
-        """Zum nächsten Stück überblenden."""
+        """Im Encoder zum nächsten Stück überblenden (zu hören erst nach vorlauf_s – für sofort: springen)."""
         self._weiter.set()
+
+    def naechstes_nach(self, mid: str | None) -> str | None:
+        """Stück nach mid in der Playlist (bei Zufall ein anderes zufälliges)."""
+        pl = self.medien.daten.playlist
+        ids = [i for i in pl.reihenfolge if self.medien.musik(i)]
+        if not ids:
+            return None
+        if pl.zufall:
+            andere = [i for i in ids if i != mid] or ids
+            return random.choice(andere)
+        return ids[(ids.index(mid) + 1) % len(ids)] if mid in ids else ids[0]
+
+    async def springen(self, mid: str) -> None:
+        """Stück mid sofort spielen: Der Stream beginnt neu mit diesem Stück (Rückblick und Vorlauf mit dem alten
+        werden verworfen), danach geht die Playlist ab dort weiter. Zuhörer mit Vorrat (Pi) bekommen das Ende des
+        alten Streams und verbinden neu – der Pi verwirft dazu auf „musik sprung“ seinen Vorrat."""
+        self._sprung = mid
+        if self._anzeige:
+            self._anzeige.cancel()
+            self._anzeige = None
+        if self._task:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._task
+            self._task = asyncio.create_task(self._sender(), name="ambiente")
+        stueck = self.medien.musik(mid)
+        self.jetzt_id = mid
+        self._setze_jetzt(stueck.name if stueck else None)
 
     async def stoppen(self) -> None:
         if self._anzeige:
@@ -77,6 +107,7 @@ class Ambiente:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._task
             self._task = None
+        self.jetzt_id = None
         self._setze_jetzt(None)
 
     async def hoeren(self, puffer_s: float = 0) -> AsyncIterator[bytes]:
@@ -117,15 +148,20 @@ class Ambiente:
             if self.bei_wechsel:
                 self.bei_wechsel(name)
 
-    def _jetzt_beim_hoeren(self, name: str) -> None:
+    def _jetzt_beim_hoeren(self, mid: str, name: str) -> None:
         """Titel erst anzeigen, wenn er zu hören ist (der Encoder läuft bis zu vorlauf_s voraus)."""
         if self._anzeige:
             self._anzeige.cancel()
             self._anzeige = None
-        if self.vorlauf_s <= 3:
+
+        def setzen() -> None:
+            self.jetzt_id = mid
             self._setze_jetzt(name)
+
+        if self.vorlauf_s <= 3:
+            setzen()
         else:
-            self._anzeige = asyncio.get_running_loop().call_later(self.vorlauf_s, self._setze_jetzt, name)
+            self._anzeige = asyncio.get_running_loop().call_later(self.vorlauf_s, setzen)
 
     def _verteilen(self, block: bytes) -> None:
         self._rueckblick.append(block)
@@ -215,13 +251,23 @@ class Ambiente:
                     rest = None
                 yield np.zeros((STUECK_FRAMES, KANAELE), np.int16)
                 continue
-            for mid in ids:
+            i = 0
+            while i < len(ids):
+                if self._sprung:
+                    mid, self._sprung = self._sprung, None
+                    if mid in ids and not self.medien.daten.playlist.zufall:
+                        i = ids.index(mid) + 1          # danach in der Reihenfolge weiter
+                else:
+                    mid = ids[i]
+                    i += 1
                 stueck = self.medien.musik(mid)
                 if not stueck:
                     continue
-                self._jetzt_beim_hoeren(stueck.name)
+                self._jetzt_beim_hoeren(mid, stueck.name)
                 async for block, rest in self._stueck(mid, rest):
                     yield block
+                    if self._sprung:                      # (Sicherheit; springen startet den Stream ohnehin neu)
+                        break
 
     async def _stueck(self, mid: str, rest: np.ndarray | None):
         """Dekodiert ein Stück. Liefert (Block, neuer Rest) – der Rest (die letzten

@@ -124,6 +124,35 @@ def test_ambiente_unterlauf_ohne_ersatz(tmp_path):
     assert a.unterlaeufe == 1 and a.quelle == "puffert"
 
 
+def test_ambiente_sprung_blendet_aus_verwirft_vorrat_und_blendet_ein(tmp_path, monkeypatch):
+    a = Ambiente("http://test", tmp_path, 15)
+    monkeypatch.setattr(a, "_netz", lambda gen: None)        # kein echtes Netz
+    a.soll = True
+    a.letzte_daten = time.monotonic()
+    a.vorrat.schreiben(np.full((10 * RATE, 2), 0.5, np.float32))   # 10 s altes Stück im Vorrat
+    a.lesen(BLOCK)
+    assert a.quelle == "stream"
+    a.sprung()
+    pegel = []
+    while (blk := a.lesen(BLOCK)) is not None:
+        pegel.append(float(np.abs(blk).max()))
+    assert 30 <= len(pegel) <= 45, "altes Stück klingt in ~0,4 s aus"
+    assert pegel[0] > 0.45 and pegel[-1] < 0.05 and all(x >= y - 1e-6 for x, y in zip(pegel, pegel[1:]))
+    assert a.quelle == "puffert" and a._alt is None
+    # Stream stockt kurz nach dem Sprung: trotzdem kein Ersatz (das wäre das alte Stück)
+    a.letzte_daten = 0
+    a._ersatz_starten = lambda: pytest.fail("Ersatz nach Sprung")
+    assert a.lesen(BLOCK) is None
+    # neues Stück kommt im neuen Vorrat an -> weich eingeblendet
+    a.vorrat.schreiben(np.full((2 * RATE, 2), 0.8, np.float32))
+    erste = a.lesen(BLOCK)
+    assert a.quelle == "stream" and float(np.abs(erste).max()) < 0.1
+    for _ in range(40):
+        blk = a.lesen(BLOCK)
+    assert np.allclose(blk, 0.8)
+    assert a.unterlaeufe == 0
+
+
 # ---------------------------------------------------------------------------- Mischer
 class _Licht:
     aktiv = True

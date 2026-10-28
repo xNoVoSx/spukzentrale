@@ -132,7 +132,17 @@ async def ambiente(request: Request, d: An):
 
 @router.post("/api/ambiente/weiter")
 async def ambiente_weiter(request: Request):
-    zentrale(request).ambiente.weiter()
+    await zentrale(request).ambiente_weiter()
+    return {"ok": True}
+
+
+@router.post("/api/ambiente/spielen/{mid}")
+async def ambiente_spielen(request: Request, mid: str):
+    """Dieses Stück sofort spielen (Ambiente geht dafür an), danach geht die Playlist ab dort weiter."""
+    try:
+        await zentrale(request).ambiente_spielen(mid)
+    except ValueError as e:
+        raise _nicht_gefunden("Dieses Stück") from e
     return {"ok": True}
 
 

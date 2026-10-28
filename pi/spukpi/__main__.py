@@ -81,9 +81,13 @@ class Dienst:
         if t == "config":
             self.mischer.konfigurieren(m)
         elif t == "musik":
-            if m.get("aktion") == "play":
+            aktion = m.get("aktion")
+            if aktion == "play":
                 self.musik_bestaetigt = True
                 self.mischer.musik_play(m.get("pfad") or "/stream/ambiente")
+            elif aktion == "sprung":
+                self.musik_bestaetigt = True
+                self.mischer.musik_sprung()
             else:
                 self.mischer.musik_stop()
         elif t == "fx":
