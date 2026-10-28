@@ -21,7 +21,7 @@ from .modelle import Abschnitt, MusikAnalyse
 
 log = logging.getLogger(__name__)
 
-ANALYSE_VERSION = 1
+ANALYSE_VERSION = 2          # 2: Ein-/Ausblenden am Stückrand zählt nicht als ruhige Stelle
 RATE = 16000                     # YAMNet erwartet 16 kHz mono
 YAM_FENSTER = 15600              # 0,975 s
 HOP_S = 0.5
@@ -36,6 +36,8 @@ STIMME_RAND_S = 1.0              # Abschnitt um so viel vorn/hinten erweitern
 STIMME_MIN_S = 1.5
 RUHIG_DB = 6.0                   # so viel leiser als der Median
 RUHIG_MIN_S = 2.5
+RAND_S = 1.0                     # leise Stellen, die so nah am Anfang/Ende liegen, sind Ein-/Ausblenden (die Playlist
+                                 # überblendet dort ohnehin ins nächste Stück) – keine Pause für Effekte
 
 STIMMUNGS_KLASSEN = {"Scary music": "duester", "Sad music": "duester", "Tender music": "ruhig",
                      "Exciting music": "dramatisch", "Angry music": "dramatisch",
@@ -206,7 +208,8 @@ def analysieren_pcm(st: np.ndarray) -> MusikAnalyse:
     # Pegel je 0,5 s (dB) → ruhige Stellen und Kurve je Sekunde
     teile = mono[: n_fenster * hop].reshape(n_fenster, hop) if len(mono) >= hop else mono.reshape(1, -1)
     db = 10 * np.log10(np.mean(teile ** 2, axis=1) + 1e-10)
-    ruhig = abschnitte(db < np.median(db) - RUHIG_DB, HOP_S, 1.0, 0.0, RUHIG_MIN_S, dauer)
+    ruhig = [(a, b) for a, b in abschnitte(db < np.median(db) - RUHIG_DB, HOP_S, 1.0, 0.0, RUHIG_MIN_S, dauer)
+             if a > RAND_S and b < dauer - RAND_S]
     spitze = np.percentile(db, 98)
     pegel_s = [int(np.clip((np.max(db[i:i + 2]) - spitze + 40) / 40 * 100, 0, 100)) for i in range(0, len(db), 2)]
 

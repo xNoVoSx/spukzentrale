@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.4] – 2026-10-28
+
+- Musikanalyse v2: Ein- und Ausblenden am Anfang/Ende eines Stücks zählt nicht mehr als „ruhige Stelle“ – sonst
+  warteten Zufalls-Effekte aufs Stückende (wo ohnehin ins nächste Stück überblendet wird). Alle Stücke werden nach
+  dem Update automatisch neu analysiert.
+
 ## [1.3.3] – 2026-10-28
 
 ### Zufalls-Effekte passend zur Musik

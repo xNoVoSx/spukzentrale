@@ -31,6 +31,17 @@ def test_takt_und_ruhige_stelle():
     assert a.gewichte                                             # Stimmung hat Gewichte
 
 
+def test_ein_und_ausblenden_ist_keine_ruhige_stelle():
+    x = _klicks(120, 30, 12, 18)
+    n = len(x)
+    rampe = np.linspace(0, 1, 4 * ma.RATE, dtype=np.float32)[:, None]
+    x[:4 * ma.RATE] *= rampe                    # 4 s einblenden
+    x[n - 6 * ma.RATE:] *= np.linspace(1, 0, 6 * ma.RATE, dtype=np.float32)[:, None]   # 6 s ausblenden
+    a = ma.analysieren_pcm(x)
+    assert a.ruhig and all(1 < v and b < 29 for v, b in a.ruhig), a.ruhig
+    assert any(11 <= v <= 13 for v, _ in a.ruhig)
+
+
 def test_abschnitte_schliessen_luecken_und_verwerfen_kurzes():
     m = np.zeros(40, bool)
     m[4:8] = True      # 2,0–4,0 s
