@@ -9,6 +9,8 @@ Firmware und Server tragen dieselbe Versionsnummer.
   in Grusel-Hintergrundmusik), ein Gesangsabschnitt braucht mindestens 3 Fenster (1,5 s) Stimme. An Novos' 15 Stücken:
   vorher Fehl-Abschnitte in 9 Instrumentalstücken, jetzt nur noch Gesang in „This Is Halloween“ (116 s statt 122 s).
 - Legende über der Playlist (Gesang / ruhige Stelle / normale Musik / läuft gerade).
+- Pi: Das Musiklicht (Hüllkurve, Spektrum, Schläge) rechnet mit der Musik **vor** Ducking und Lautstärke – unter einem
+  Effekt (Donner …) sackte das Licht bisher mit der leiser gemachten Musik ab.
 
 ## [1.3.5] – 2026-10-28
 

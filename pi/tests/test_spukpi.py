@@ -198,6 +198,29 @@ def test_mischer_block_effekt_licht_und_ducking(tmp_path):
     assert m.duck_ist < 0.6
 
 
+def test_musiklicht_sackt_beim_ducking_nicht_ab(tmp_path):
+    amb = Ambiente("http://test", tmp_path, 15)
+    amb.soll = True
+    amb.letzte_daten = time.monotonic() + 3600              # Stream gilt als frisch
+    t = np.arange(RATE * 3) / RATE
+    ton = (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+    amb.vorrat.schreiben(np.column_stack((ton, ton)))
+    licht = _Licht()
+    m = Mischer("null", amb, _Effekte(), licht, analyse=False)
+    m.konfigurieren({"master": 100, "musik_vol": 60, "duck": 60, "latenz_ms": 0})
+    m.latenz_ms = 0
+    m.musik_fade = 1.0
+    musik = lambda: [d[4] for d in licht.daten if d[2] == protokoll.MSG_HUELLE][-1]   # noqa: E731
+    for _ in range(30):
+        m._block()
+    ohne = musik()
+    m.fx_start("donner", 100, None)
+    for _ in range(30):
+        m._block()
+    assert m.duck_ist < 0.5                                   # Musik ist hörbar geduckt …
+    assert ohne > 20 and abs(musik() - ohne) <= 2             # … das Musiklicht bleibt gleich
+
+
 def test_limiter():
     x = np.array([0.5, 0.9, -2.0, 5.0], np.float32)
     y = begrenze(x)

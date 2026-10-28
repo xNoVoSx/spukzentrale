@@ -288,9 +288,11 @@ class Mischer(threading.Thread):
             pcm = (aus * 32767).astype(np.int16).tobytes()
 
         # --- Licht: Hüllkurve + Spektrum, um die Ausgabe-Latenz verzögert ---
+        # Grundlage ist die Musik VOR Ducking und Lautstärke: Unter einem Effekt (Donner …) wird die Musik leiser,
+        # das Lied ist aber dasselbe – das Musiklicht soll nicht mit absacken.
         if self.licht is not None and self.licht.aktiv:
             if m is not None:
-                mono = (m[:, 0] + m[:, 1]) * 0.5
+                mono = (musik[:, 0] + musik[:, 1]) * (0.5 * max(alt, self.musik_fade))
                 rms = float(np.sqrt(np.dot(mono, mono) / n))
             else:
                 mono, rms = None, 0.0
