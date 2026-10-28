@@ -1,4 +1,4 @@
-"""Verbindungen zu den ESPs (WebSocket /ws/geraet?rolle=licht|sound)."""
+"""Verbindungen zu den Geräten – Licht-ESP, Sound-ESP bzw. Raspberry Pi (WebSocket /ws/geraet?rolle=licht|sound)."""
 
 import asyncio
 import json

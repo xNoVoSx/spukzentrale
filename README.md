@@ -246,10 +246,16 @@ Automation nötig. Tipp: In der Reolink-App eine Erkennungszone nur für den eig
 *Einstellungen → MQTT*: Broker eintragen und aktivieren. In Home Assistant erscheint
 automatisch das Gerät **Spukzentrale** mit Schaltern (Show, Ambiente, Zufallsereignisse),
 Helligkeit, Lautstärke, Gruselstufe, Stimmung, einem Knopf pro Szene und dem Gerätestatus.
+Unter **Diagnose** (alle 30 s aktualisiert): Pi-Temperatur, Unterspannung (jetzt und seit dem Start), Last, SD frei,
+WLAN-Signal, Stream-Vorrat und -Quelle, Ambiente-Aussetzer, Ausgabe-Unterläufe, gemessene Latenz, Licht-Bilder/s,
+längster Licht-Takt, Licht-Verbindung (USB/WLAN) und das letzte Ereignis – z. B. für eine Benachrichtigung bei
+Unterspannung.
 
 ### REST-API
 
 Alle Funktionen sind per HTTP erreichbar, Dokumentation unter `http://<server>:8095/docs`.
+Für die Fehlersuche: `http://<server>:8095/api/diagnose` zeigt Geräte, Stream und Hörposition (inkl. „gerade
+Gesang?“), den Zeitplan des Zufallsgenerators, HA/MQTT und die letzten Protokolleinträge auf einen Blick.
 Beispiele:
 
 ```yaml

@@ -3,6 +3,17 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.8] – 2026-10-28
+
+- **Gerätenamen** passen zum Aufbau: „Sound (Raspberry Pi)“ und „Licht-ESP (USB am Pi)“ im Protokoll, in Meldungen
+  und in der Oberfläche (Effekt-Speicher des Pi als SD-Karte). „verbunden“ wird erst mit dem Hallo protokolliert
+  (dann ist klar, ob Pi oder ESP), mit Firmware-Version. MQTT: „Sound-Ausgabe“ / „Licht-Steuerung“.
+- **MQTT-Diagnose** für Home Assistant: Pi-Temperatur, Unterspannung, Strom seit Start, Last, SD frei, WLAN-Signal,
+  Stream-Vorrat/-Quelle, Aussetzer, Ausgabe-Unterläufe, Latenz, Licht-Bilder/s, Licht-Takt, Licht-Verbindung,
+  letztes Ereignis (alle 30 s).
+- **`GET /api/diagnose`** für die Fehlersuche.
+- Aufgeräumt: altes „Weiter im Encoder“ entfernt (Weiter springt seit 1.3.2 sofort).
+
 ## [1.3.7] – 2026-10-28
 
 - **Fehler behoben: Einstellungen gingen beim Speichern verloren**, wenn nebenher die Show lief. Jede

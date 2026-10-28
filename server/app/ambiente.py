@@ -2,7 +2,7 @@
 
 Die Playlist wird mit ffmpeg zu PCM dekodiert, Stücke werden ineinander übergeblendet
 und das Ergebnis läuft durch einen einzigen, dauerhaft laufenden MP3-Encoder. So gibt es
-beim Wiederholen keine Lücken (MP3-Dateien haben am Anfang/Ende Stille) und der Sound-ESP
+beim Wiederholen keine Lücken (MP3-Dateien haben am Anfang/Ende Stille) und das Sound-Gerät (Pi/ESP)
 muss nur einen einzigen Stream abspielen – wie ein Internetradio.
 
 Der Encoder wird in Echtzeit (mit kleinem Vorlauf) gefüttert. Neue Zuhörer bekommen
@@ -52,7 +52,6 @@ class Ambiente:
         self._rueckblick: collections.deque[bytes] = collections.deque()
         self._rueckblick_bytes = 0
         self._task: asyncio.Task | None = None
-        self._weiter = asyncio.Event()
         self._wunsch: dict[asyncio.Queue, float] = {}     # puffer_s je Zuhörer (Pi)
         self._anzeige: asyncio.TimerHandle | None = None   # verzögerter Titelwechsel
 
@@ -70,10 +69,6 @@ class Ambiente:
     @property
     def zuhoerer(self) -> int:
         return len(self._zuhoerer)
-
-    def weiter(self) -> None:
-        """Im Encoder zum nächsten Stück überblenden (zu hören erst nach vorlauf_s – für sofort: springen)."""
-        self._weiter.set()
 
     def position(self, jetzt: float | None = None) -> tuple[str, float] | None:
         """(Stück-ID, Sekunde im Stück), die gerade draußen zu hören ist – None, wenn nichts läuft."""
@@ -309,7 +304,6 @@ class Ambiente:
             stdout=asyncio.subprocess.PIPE,
         )
         assert dec.stdout
-        self._weiter.clear()
         gehalten = np.zeros((0, KANAELE), np.float32)
         bytes_pro_stueck = STUECK_FRAMES * KANAELE * 2
         try:
@@ -327,12 +321,6 @@ class Ambiente:
                     raus = len(gehalten) - ueber
                     yield _int16(gehalten[:raus]), None
                     gehalten = gehalten[raus:]
-                if self._weiter.is_set():
-                    self._weiter.clear()
-                    if rest is not None:  # Stück war noch in der Einblendung
-                        gehalten = _ueberblenden(rest[: len(gehalten)], gehalten) if len(gehalten) else rest
-                        rest = None
-                    break
         finally:
             with contextlib.suppress(ProcessLookupError):
                 dec.kill()

@@ -237,3 +237,42 @@ def test_stueck_direkt_spielen_springt_beim_pi(client, ton):
     finally:
         client.post("/api/ambiente", json={"an": False})
         ws.__exit__(None, None, None)
+
+
+def test_mqtt_diagnose_werte_vom_pi_und_licht(client):
+    from app.mqtt import MqttBruecke
+    b = MqttBruecke(client.app.state.zentrale)
+    assert b.diagnose_werte() == {} or set(b.diagnose_werte()) <= {"letztes_ereignis"}     # nichts verbunden
+    sound = client.websocket_connect("/ws/geraet?rolle=sound&fw=1.3.6")
+    licht = client.websocket_connect("/ws/geraet?rolle=licht&fw=1.3.1")
+    sound.__enter__(), licht.__enter__()
+    try:
+        sound.send_json({"t": "hallo", "rolle": "sound", "fw": "1.3.6", "plattform": "pi"})
+        sound.send_json({"t": "status", "pi_temp": 41.7, "pi_gedrosselt": 0x50005, "pi_gedrosselt_text": ["Unterspannung"],
+                         "puffer_s": 15.2, "unterlaeufe": 0, "alsa_xruns": 2, "rssi": -58, "pi_sd_frei_mb": 20480})
+        licht.send_json({"t": "hallo", "rolle": "licht", "fw": "1.3.1", "verbindung": "usb"})
+        licht.send_json({"t": "status", "fps": 100, "render_max_us": 1042, "verbindung": "usb"})
+        warte_auf(sound, "fx_sync")
+        for _ in range(50):
+            w = b.diagnose_werte()
+            if "licht_fps" in w and "pi_temp" in w:
+                break
+            time.sleep(0.05)
+        assert w["pi_temp"] == "41.7" and w["pi_unterspannung"] == "ON" and w["pi_strom"] == "Unterspannung"
+        assert w["pi_sd_frei"] == "20.0" and w["stream_vorrat"] == "15.2" and w["ausgabe_unterlaeufe"] == "2"
+        assert w["licht_fps"] == "100" and w["licht_takt"] == "1.0" and w["licht_verbindung"] == "usb"
+        texte = [e["text"] for e in client.get("/api/status").json()["protokoll"]]
+        assert any(t.startswith("Sound (Raspberry Pi) verbunden") for t in texte)
+        assert any(t.startswith("Licht-ESP (USB am Pi) verbunden") for t in texte)
+        ids = [c["unique_id"] for _, _, c in b._entitaeten()]
+        assert len(ids) == len(set(ids)) and "spukzentrale_pi_temp" in ids
+    finally:
+        sound.__exit__(None, None, None), licht.__exit__(None, None, None)
+
+
+def test_diagnose_endpunkt(client):
+    d = client.get("/api/diagnose").json()
+    from app import VERSION
+    assert d["version"] == VERSION
+    assert set(d["geraete"]) == {"licht", "sound"} and d["geraete"]["sound"]["verbunden"] is False
+    assert d["ambiente"]["position_s"] is None and "naechstes_in_s" in d["generator"]

@@ -2,7 +2,8 @@
 
 Legt in Home Assistant automatisch ein Gerät „Spukzentrale“ an: Schalter für Show,
 Ambiente und Ereignisse, Helligkeit, Lautstärke, Gruselstufe, Stimmung, einen Knopf pro
-Szene, Gerätestatus und das laufende Ambiente-Stück.
+Szene, Gerätestatus und das laufende Ambiente-Stück. Dazu Diagnose-Werte (Pi-Temperatur,
+Unterspannung, Stream-Vorrat, Aussetzer, Licht-Takt …), alle DIAGNOSE_TAKT_S aktualisiert.
 Doku: https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery
 """
 
@@ -21,6 +22,40 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 GERAET_ID = "spukzentrale"
+DIAGNOSE_TAKT_S = 30
+
+# (Komponente, Objekt, Name, Rolle, Statusfeld bzw. Funktion(status) -> Wert, Zusatz für die Discovery)
+_C = {"state_class": "measurement"}
+DIAGNOSE = [
+    ("sensor", "pi_temp", "Pi Temperatur", "sound", "pi_temp",
+     {**_C, "device_class": "temperature", "unit_of_measurement": "°C", "suggested_display_precision": 0}),
+    ("binary_sensor", "pi_unterspannung", "Pi Unterspannung", "sound",
+     lambda s: None if s.get("pi_gedrosselt") is None else ("ON" if s["pi_gedrosselt"] & 0x1 else "OFF"),
+     {"device_class": "problem"}),
+    ("sensor", "pi_strom", "Pi Strom seit Start", "sound",
+     lambda s: None if s.get("pi_gedrosselt") is None else (", ".join(s.get("pi_gedrosselt_text") or []) or "ok"),
+     {"icon": "mdi:flash-alert"}),
+    ("sensor", "pi_last", "Pi Last", "sound", "pi_last", {**_C, "icon": "mdi:cpu-64-bit"}),
+    ("sensor", "pi_sd_frei", "Pi SD frei", "sound",
+     lambda s: None if s.get("pi_sd_frei_mb") is None else round(s["pi_sd_frei_mb"] / 1024, 1),
+     {**_C, "unit_of_measurement": "GB", "icon": "mdi:sd"}),
+    ("sensor", "sound_wlan", "Sound WLAN-Signal", "sound", "rssi",
+     {**_C, "device_class": "signal_strength", "unit_of_measurement": "dBm"}),
+    ("sensor", "stream_vorrat", "Stream-Vorrat", "sound", "puffer_s",
+     {**_C, "unit_of_measurement": "s", "icon": "mdi:timer-sand"}),
+    ("sensor", "stream_quelle", "Stream-Quelle", "sound", "musik_quelle", {"icon": "mdi:radio-tower"}),
+    ("sensor", "aussetzer", "Ambiente-Aussetzer", "sound", "unterlaeufe",
+     {"state_class": "total_increasing", "icon": "mdi:music-note-off"}),
+    ("sensor", "ausgabe_unterlaeufe", "Ausgabe-Unterläufe", "sound", "alsa_xruns",
+     {"state_class": "total_increasing", "icon": "mdi:speaker-off"}),
+    ("sensor", "latenz", "Ausgabe-Latenz", "sound", "latenz_gemessen_ms",
+     {**_C, "unit_of_measurement": "ms", "icon": "mdi:timer-outline"}),
+    ("sensor", "licht_fps", "Licht Bilder/s", "licht", "fps", {**_C, "unit_of_measurement": "fps", "icon": "mdi:led-on"}),
+    ("sensor", "licht_takt", "Licht-Takt max.", "licht",
+     lambda s: None if s.get("render_max_us") is None else round(s["render_max_us"] / 1000, 1),
+     {**_C, "unit_of_measurement": "ms", "icon": "mdi:speedometer"}),
+    ("sensor", "licht_verbindung", "Licht-Verbindung", "licht", "verbindung", {"icon": "mdi:usb"}),
+]
 
 
 class MqttBruecke:
@@ -88,6 +123,7 @@ class MqttBruecke:
                     await c.publish(f"{self.p}/verfuegbar", "online", qos=1, retain=True)
                     await self._zustaende(c)
                     sender = asyncio.create_task(self._sende_aenderungen(c))
+                    diagnose = asyncio.create_task(self._diagnose(c))
                     try:
                         async for msg in c.messages:
                             try:
@@ -96,6 +132,7 @@ class MqttBruecke:
                                 log.exception("MQTT-Befehl %s", msg.topic)
                     finally:
                         sender.cancel()
+                        diagnose.cancel()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -164,10 +201,17 @@ class MqttBruecke:
             obj = f"ausloeser_{a.id.replace('-', '_')}"
             e.append(("button", obj, {**self._basis(obj, f"Auslöser {a.name}", "mdi:doorbell"),
                                       "command_topic": f"{p}/ausloeser/{a.id}/start"}))
-        for rolle, name in (("licht", "Licht-ESP"), ("sound", "Sound-ESP")):
+        # neutral benannt: hinter „sound“ steht seit 1.3 meist der Raspberry Pi
+        for rolle, name in (("licht", "Licht-Steuerung"), ("sound", "Sound-Ausgabe")):
             obj = f"{rolle}_online"
             e.append(("binary_sensor", obj, {**self._basis(obj, name), "state_topic": f"{p}/{obj}",
                                              "device_class": "connectivity", "entity_category": "diagnostic"}))
+        for komponente, obj, name, _rolle, _quelle, zusatz in DIAGNOSE:
+            e.append((komponente, obj, {**self._basis(obj, name), "state_topic": f"{p}/diag/{obj}",
+                                        "entity_category": "diagnostic", **zusatz}))
+        e.append(("sensor", "letztes_ereignis", {**self._basis("letztes_ereignis", "Letztes Ereignis", "mdi:ghost-outline"),
+                                                  "state_topic": f"{p}/diag/letztes_ereignis",
+                                                  "entity_category": "diagnostic"}))
         e.append(("sensor", "jetzt", {**self._basis("jetzt", "Ambiente-Stück", "mdi:music-note"),
                                       "state_topic": f"{p}/jetzt"}))
         e.append(("sensor", "szene", {**self._basis("szene", "Laufende Szene", "mdi:movie-play"),
@@ -205,6 +249,27 @@ class MqttBruecke:
         }
         for k, v in werte.items():
             await c.publish(f"{self.p}/{k}", v, qos=0, retain=True)
+
+    def diagnose_werte(self) -> dict[str, str]:
+        """Aktuelle Diagnose-Werte (Objekt -> Text); fehlende Werte (Gerät nicht verbunden) bleiben weg."""
+        out: dict[str, str] = {}
+        for _k, obj, _name, rolle, quelle, _z in DIAGNOSE:
+            g = self.z.geraete.get(rolle)
+            if g is None:
+                continue
+            w = quelle(g.status) if callable(quelle) else g.status.get(quelle)
+            if w is not None:
+                out[obj] = str(w)
+        ereignis = next((e["text"] for e in self.z.protokoll if e.get("art") in ("fx", "aktion")), None)
+        if ereignis:
+            out["letztes_ereignis"] = ereignis[:250]
+        return out
+
+    async def _diagnose(self, c: aiomqtt.Client) -> None:
+        while True:
+            for obj, wert in self.diagnose_werte().items():
+                await c.publish(f"{self.p}/diag/{obj}", wert, qos=0, retain=True)
+            await asyncio.sleep(DIAGNOSE_TAKT_S)
 
     # ------------------------------------------------------------------
     async def _befehl(self, topic: str, wert: str) -> None:

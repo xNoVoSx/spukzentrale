@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -12,7 +13,7 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, 
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import homeassistant, pfade
+from . import VERSION, homeassistant, pfade
 from .geraete import ROLLEN, Geraet
 from .medien import ID_MUSTER, KonvertierFehler, fx_umwandeln, musik_umwandeln
 from .modelle import (
@@ -79,6 +80,40 @@ class StimmeKorrektur(BaseModel):
 @router.get("/api/status")
 async def status(request: Request):
     return zentrale(request).alles()
+
+
+@router.get("/api/diagnose")
+async def diagnose(request: Request):
+    """Alles für die Fehlersuche auf einen Blick: Geräte, Stream und Hörposition, Generator, HA/MQTT, Protokoll."""
+    z = zentrale(request)
+    jetzt = time.monotonic()
+    geraete = {}
+    for rolle in ROLLEN:
+        g = z.geraete.get(rolle)
+        geraete[rolle] = {"name": z.geraet_name(g, rolle), "verbunden": g is not None,
+                          **({"fw": g.hallo.get("fw", g.fw), "ip": g.ip, "seit_s": round(time.time() - g.seit),
+                              "letzte_nachricht_s": round(jetzt - g.letzte_nachricht, 1), "status": g.status}
+                             if g else {})}
+    stueck, pos = z.musik_lage()
+    gesang = bool(stueck and pos is not None and any(a <= pos < b for a, b in stueck.stimme))
+    gen = z.generator
+    return {
+        "version": VERSION,
+        "zustand": {"show": z.zustand.licht.an, "ambiente": z.zustand.ambiente_an, "ereignisse": z.zustand.ereignisse_an,
+                    "gruselstufe": z.zustand.gruselstufe, "ruhezeit": z.ruhezeit_aktiv},
+        "geraete": geraete,
+        "ambiente": {"laeuft": z.ambiente.laeuft, "zuhoerer": z.ambiente.zuhoerer, "vorlauf_s": z.ambiente.vorlauf_s,
+                     "jetzt": z.ambiente.jetzt, "stueck_id": stueck.id if stueck else None,
+                     "position_s": None if pos is None else round(pos, 1), "gesang_jetzt": gesang,
+                     "analyse_laeuft": sorted(z.analyse_laeuft)},
+        "generator": None if gen is None else {
+            "naechstes_in_s": {rid: round(t - jetzt, 1) for rid, t in gen.naechstes.items()},
+            "wartet_auf_musik": {rid: f.name for rid, f in gen.vorgemerkt.items()},
+            "auf_ruhe_gewartet": sorted(gen.pause_gewartet)},
+        "szene": (z.spieler.laufend or {}).get("name") if z.spieler else None,
+        "homeassistant": z.ha_status, "mqtt": z.mqtt_status,
+        "protokoll": list(z.protokoll)[:30],
+    }
 
 
 @router.post("/api/show")
@@ -436,7 +471,7 @@ async def fx_hochladen(
     if not z.medien.fx(fid) and z.medien.fx_belegt_kb() + groesse // 1024 + 4 > z.fx_kapazitaet_kb():
         z.medien.fx_pfad(fid).unlink(missing_ok=True)
         z.medien.fx_vorhoer_pfad(fid).unlink(missing_ok=True)
-        raise HTTPException(507, "Der Speicher des Sound-ESP ist voll – lösche erst andere Effekte")
+        raise HTTPException(507, "Der Effekt-Speicher des Sound-Geräts ist voll – lösche erst andere Effekte")
     licht = LICHT_JE_KATEGORIE.get(kategorie)
     f = z.medien.fx_hinzu(Effekt(
         id=fid, name=(name.strip() or _anzeigename(datei.filename))[:60], kategorie=kategorie,

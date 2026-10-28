@@ -250,23 +250,34 @@ class Zentrale:
                 await alt.ws.close()
             except Exception:
                 pass
-        self.protokollieren(f"{'Licht' if g.rolle == 'licht' else 'Sound'}-ESP verbunden ({g.ip})", "geraet")
+        # „verbunden“ kommt ins Protokoll, sobald das Hallo da ist – erst dann ist klar, ob Pi oder ESP
         self.an_ui({"t": "geraete", "geraete": self.geraete.info()})
         self._melden("geraete")
 
+    @staticmethod
+    def geraet_name(g: Geraet | None, rolle: str) -> str:
+        """Anzeigename: Seit 1.3 kann hinter „sound“ der Raspberry Pi stehen und der Licht-ESP am USB des Pi hängen."""
+        h = g.hallo if g else {}
+        if rolle == "sound":
+            return "Sound (Raspberry Pi)" if h.get("plattform") == "pi" else "Sound-ESP"
+        return "Licht-ESP (USB am Pi)" if h.get("verbindung") == "usb" else "Licht-ESP"
+
     async def geraet_getrennt(self, g: Geraet) -> None:
         if self.geraete.abmelden(g):
-            self.protokollieren(f"{'Licht' if g.rolle == 'licht' else 'Sound'}-ESP getrennt", "geraet")
+            self.protokollieren(f"{self.geraet_name(g, g.rolle)} getrennt", "geraet")
             self.an_ui({"t": "geraete", "geraete": self.geraete.info()})
             self._melden("geraete")
 
     async def geraet_nachricht(self, g: Geraet, msg: dict) -> None:
         t = msg.get("t")
         if t == "hallo":
+            erstes = not g.hallo
             g.hallo = msg
+            name = self.geraet_name(g, g.rolle)
+            if erstes:
+                self.protokollieren(f"{name} verbunden ({g.ip}, FW {msg.get('fw', g.fw)})", "geraet")
             if msg.get("neustart_normal") is False:
-                name = "Licht" if g.rolle == "licht" else "Sound"
-                self.protokollieren(f"{name}-ESP ist neu gestartet: {msg.get('neustart_grund', '?')}", "fehler")
+                self.protokollieren(f"{name} ist neu gestartet: {msg.get('neustart_grund', '?')}", "fehler")
             if g.rolle == "licht":
                 await self.licht.konfigurieren(self.einst.licht)
                 await self.licht.zustand(self.licht_effektiv(), temp=self.overlay is not None)
@@ -283,17 +294,17 @@ class Zentrale:
             g.status = {k: v for k, v in msg.items() if k != "t"}
             self.an_ui({"t": "geraet_status", "rolle": g.rolle, "status": g.status})
         elif t == "log":
-            name = "Licht" if g.rolle == "licht" else "Sound"
-            self.protokollieren(f"{name}-ESP: {str(msg.get('text', ''))[:200]}", "geraet")
+            self.protokollieren(f"{self.geraet_name(g, g.rolle)}: {str(msg.get('text', ''))[:200]}", "geraet")
         elif t == "werte":
             self.an_ui({"t": "werte", "v": msg.get("v", [])})
         elif t == "fx_fehlt":
-            log.info("Sound-ESP kennt Effekt %s nicht – Abgleich", msg.get("id"))
+            log.info("%s kennt Effekt %s nicht – Abgleich", self.geraet_name(g, g.rolle), msg.get("id"))
             if time.monotonic() - self._letzter_fx_sync > 10:
                 await self.fx_sync()
         elif t == "fx_sync_fertig":
             if msg.get("geladen") or msg.get("geloescht") or msg.get("fehler"):
-                text = f"Effekte auf dem Sound-ESP abgeglichen: {msg.get('geladen', 0)} geladen, {msg.get('geloescht', 0)} gelöscht"
+                text = (f"Effekte abgeglichen ({self.geraet_name(g, g.rolle)}): {msg.get('geladen', 0)} geladen, "
+                        f"{msg.get('geloescht', 0)} gelöscht")
                 if msg.get("fehler"):
                     text += f", {msg['fehler']} Fehler ({msg.get('meldung', '')})"
                 self.protokollieren(text, "fehler" if msg.get("fehler") else "geraet")
@@ -390,8 +401,8 @@ class Zentrale:
                          quelle: str = "") -> None:
         """Effekt-Sound mit passendem Licht.
 
-        Ist der Licht-ESP per Kabel mit dem Sound-ESP verbunden, geht die Licht-Aktion mit
-        dem Sound an den Sound-ESP und von dort im selben Moment wie der erste Ton per UART
+        Hängt das Licht per Kabel am Sound-Gerät (Licht-ESP per USB am Pi bzw. per UART am Sound-ESP), geht die
+        Licht-Aktion mit dem Sound dorthin und von dort im selben Moment wie der erste Ton
         weiter. Sonst schickt der Server sie direkt, um die Ausgabe-Latenz verzögert.
         """
         if licht == "auto":
