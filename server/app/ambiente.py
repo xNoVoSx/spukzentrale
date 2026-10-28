@@ -43,6 +43,11 @@ class Ambiente:
         self.jetzt: str | None = None        # Name des laufenden Stücks
         self.jetzt_id: str | None = None     # dessen ID (wie jetzt: erst, wenn es zu hören ist)
         self._sprung: str | None = None      # dieses Stück als Nächstes, sofort (springen)
+        # Hörposition: Echtzeit-Uhr des Encoders (start + gesendete Sekunden = wann es draußen zu hören ist –
+        # Zuhörer mit Vorrat spielen um genau den Vorlauf verzögert) und wann welches Stück dort beginnt
+        self._uhr_start = 0.0
+        self._gesendet_s = 0.0
+        self._spielplan: collections.deque[tuple[float, str]] = collections.deque(maxlen=8)
         self._zuhoerer: set[asyncio.Queue] = set()
         self._rueckblick: collections.deque[bytes] = collections.deque()
         self._rueckblick_bytes = 0
@@ -70,6 +75,16 @@ class Ambiente:
         """Im Encoder zum nächsten Stück überblenden (zu hören erst nach vorlauf_s – für sofort: springen)."""
         self._weiter.set()
 
+    def position(self, jetzt: float | None = None) -> tuple[str, float] | None:
+        """(Stück-ID, Sekunde im Stück), die gerade draußen zu hören ist – None, wenn nichts läuft."""
+        if not self.laeuft or not self._spielplan:
+            return None
+        jetzt = time.monotonic() if jetzt is None else jetzt
+        for ab, mid in reversed(self._spielplan):
+            if ab <= jetzt:
+                return mid, jetzt - ab
+        return None
+
     def naechstes_nach(self, mid: str | None) -> str | None:
         """Stück nach mid in der Playlist (bei Zufall ein anderes zufälliges)."""
         pl = self.medien.daten.playlist
@@ -86,6 +101,7 @@ class Ambiente:
         werden verworfen), danach geht die Playlist ab dort weiter. Zuhörer mit Vorrat (Pi) bekommen das Ende des
         alten Streams und verbinden neu – der Pi verwirft dazu auf „musik sprung“ seinen Vorrat."""
         self._sprung = mid
+        self._spielplan.clear()
         if self._anzeige:
             self._anzeige.cancel()
             self._anzeige = None
@@ -149,19 +165,23 @@ class Ambiente:
                 self.bei_wechsel(name)
 
     def _jetzt_beim_hoeren(self, mid: str, name: str) -> None:
-        """Titel erst anzeigen, wenn er zu hören ist (der Encoder läuft bis zu vorlauf_s voraus)."""
+        """Titel erst anzeigen, wenn er zu hören ist (der Encoder läuft bis zu vorlauf_s voraus). Das Stück beginnt
+        draußen genau an der Stelle der Encoder-Uhr, an der seine ersten Daten geschrieben werden."""
         if self._anzeige:
             self._anzeige.cancel()
             self._anzeige = None
+        ab = self._uhr_start + self._gesendet_s
+        self._spielplan.append((ab, mid))
 
         def setzen() -> None:
             self.jetzt_id = mid
             self._setze_jetzt(name)
 
-        if self.vorlauf_s <= 3:
+        warten = ab - time.monotonic()
+        if warten <= 0.5:
             setzen()
         else:
-            self._anzeige = asyncio.get_running_loop().call_later(self.vorlauf_s, setzen)
+            self._anzeige = asyncio.get_running_loop().call_later(warten, setzen)
 
     def _verteilen(self, block: bytes) -> None:
         self._rueckblick.append(block)
@@ -196,19 +216,25 @@ class Ambiente:
         log.info("Ambiente-Stream gestartet")
         start = time.monotonic()
         gesendet = 0
+        self._uhr_start, self._gesendet_s = start, 0.0
+        self._spielplan.clear()
         leer_seit: float | None = None
         try:
             async for pcm in self._pcm():
                 enc.stdin.write(pcm.tobytes())
                 await enc.stdin.drain()
                 gesendet += len(pcm)
+                self._gesendet_s = gesendet / RATE
                 # Echtzeit halten
                 voraus = gesendet / RATE - (time.monotonic() - start)
                 vorlauf = self.vorlauf_s
                 if voraus > vorlauf:
                     await asyncio.sleep(voraus - vorlauf)
                 elif voraus < -2:  # z. B. nach Hänger: Uhr nachziehen statt aufholen
-                    start = time.monotonic() - gesendet / RATE
+                    versatz = time.monotonic() - gesendet / RATE - start
+                    start += versatz
+                    self._uhr_start = start
+                    self._spielplan = collections.deque(((ab + versatz, m) for ab, m in self._spielplan), maxlen=8)
                 # ohne Zuhörer irgendwann aufhören
                 if self._zuhoerer:
                     leer_seit = None

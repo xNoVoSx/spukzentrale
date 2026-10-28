@@ -278,3 +278,12 @@ dialog h2 { margin-top: 0; color: var(--lila); }
 .tabelle th { color: var(--text-leise); font-weight: 600; }
 .tabelle .warnung { color: var(--gelb); }
 code { font-size: 13px; background: var(--bg); padding: 1px 5px; border-radius: 5px; }
+
+/* Musikanalyse */
+.liste li.musik { flex-wrap: wrap; }
+.liste li.musik .analyse { flex-basis: 100%; }
+.liste li.musik .analyse small { display: block; color: var(--text-leise); font-size: 12px; margin-top: 2px; }
+.zeitleiste { display: block; width: 100%; height: 16px; margin-top: 4px; color: var(--text-leise); border-radius: 3px; background: rgba(255, 255, 255, .04); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--rand); border-radius: 999px; font-size: 13px; cursor: pointer; }
+.chip input { accent-color: var(--lila); }

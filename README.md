@@ -50,6 +50,10 @@ SERVER ──WLAN──► Raspberry Pi ──I2S──► PCM5102A ──AUX─
 - **Szenen** auf einer Zeitleiste: Gewitterfront, Schreck, Geisterwanderung, Herzschlag,
   Hexenauftritt, Kettensäge, Begrüßung – und eigene.
 - **Zufallsereignisse** nach Regeln (z. B. „Donner alle 1–4 Minuten“), mit Mindestabstand.
+- **Effekte passend zur Musik:** Jedes Ambiente-Stück wird beim Hochladen analysiert (Gesang per
+  [YAMNet](https://developers.google.com/edge/mediapipe/solutions/audio/audio_classifier), ruhige Stellen, Takt,
+  Stimmung). Zufalls-Effekte kommen nicht in Gesang (außer erlaubten wie Donner und Wind), lieber in ruhigen Stellen,
+  auf den Schlag und je nach Stimmung häufiger oder seltener. Szenen und Auslöser haben immer Vorrang.
 - **Gruselstufen** 1 (Kinder) bis 3 (Schreck), auf Wunsch automatisch nach Uhrzeit.
 - **Stimmungen:** 16 Licht-Effekte pro Zone (Kerze, Feuer, Geist wandert, kaputte Röhre, mit dem Pi auch
   Spektrum und Beat-Blitz …),
@@ -205,8 +209,8 @@ Die Weboberfläche hat keine Anmeldung – sie gehört ins Heimnetz, nicht ins I
 |---|---|
 | 🎃 **Show** | Live-Vorschau, Show an/aus, Ambiente, Zufallsereignisse, Gruselstufe, Helligkeit, Lautstärke, Sounds/Licht/Szenen auslösen, Stimmungen, Protokoll |
 | 💡 **Licht** | Effekt, Tempo, Stärke und Grundlicht je Zone, „auf alle“, Zonen-Test, Stimmungen speichern |
-| 🔊 **Sounds** | Ambiente-Playlist (Reihenfolge, Zufall, Überblendung), Effekt-Sounds hochladen, Licht je Sound einstellen, Speicherbelegung |
-| 🎬 **Szenen** | Szenen-Editor (Zeitleiste) und Regeln für die Zufallsereignisse |
+| 🔊 **Sounds** | Ambiente-Playlist (Reihenfolge, Zufall, Überblendung, ▶ Stück sofort spielen, Zeitleiste mit Gesang/ruhigen Stellen, 🎤 Gesang korrigieren), Effekt-Sounds hochladen, Licht je Sound einstellen, Speicherbelegung |
+| 🎬 **Szenen** | Szenen-Editor (Zeitleiste), Zufalls-Effekte passend zur Musik, Regeln für die Zufallsereignisse |
 | ⚙️ **Einstellungen** | Auslöser, Zeitplan, Ruhezeit, Gruselstufe nach Uhrzeit, Home Assistant, MQTT, Standort, Ton, Licht, Aufbau & Montageplan, Geräte |
 
 **Ersteinrichtung**
@@ -289,6 +293,9 @@ SPUK_CONFIG=./data/config SPUK_MEDIEN=./data/medien uvicorn app.main:app --port 
 # Simulierte ESPs verbinden (Licht + Sound, ohne Hardware)
 python werkzeuge/sim_geraete.py --server http://localhost:8095
 
+# YAMNet-Modell für die Musikanalyse (einmal; ohne läuft die Analyse ohne Gesangserkennung)
+python werkzeuge/modell_laden.py
+
 # Tests
 python -m pytest -q
 bash ../firmware/licht/test/effekte_test.sh
@@ -305,7 +312,7 @@ cd ../pi && python -m pytest -q        # Pi-Dienst (numpy, pyserial, websockets)
 | `pi/` | Raspberry Pi: Dienst `spukpi` (Sound, USB-Brücke, Notbetrieb, Analyse), Einrichtung, Tests |
 | `firmware/licht/` | Licht-ESP: Effekt-Engine (`effekte.cpp`), WLAN, WebSocket, PWM, OTA |
 | `firmware/sound/` | Sound-ESP: Audio-Pipeline (`audio.cpp`), ADPCM-Dekoder, HTTP-Chunk-Dekoder |
-| `server/app/` | FastAPI-Server: `zentrale.py` (Zustand), `ambiente.py` (Stream), `ablauf.py` (Szenen), `ereignisse.py`, `zeitplan.py`, `homeassistant.py`, `mqtt.py`, `licht.py` (Licht-Ausgang) |
+| `server/app/` | FastAPI-Server: `zentrale.py` (Zustand), `ambiente.py` (Stream, Hörposition), `ablauf.py` (Szenen), `ereignisse.py`, `musikanalyse.py` + `abstimmung.py` (Effekte passend zur Musik), `zeitplan.py`, `homeassistant.py`, `mqtt.py`, `licht.py` (Licht-Ausgang) |
 | `server/static/` | Weboberfläche (Vanilla-JS) |
 
 ### WebSocket-Protokoll (Server ↔ ESPs)

@@ -3,6 +3,22 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.3] – 2026-10-28
+
+### Zufalls-Effekte passend zur Musik
+- **Musikanalyse** beim Hochladen (ältere Stücke nach dem Start im Hintergrund), ~1 s pro Stück auf der CPU:
+  **Gesang/Sprache** per YAMNet (Google MediaPipe, AudioSet-Klassen, über `ai-edge-litert`) – zusätzlich auf der
+  isolierten Stereomitte, sonst überdeckt die Musik die Stimme; **ruhige Stellen**, **Takt** (BPM + Phase),
+  **Stimmung** (düster/ruhig/dramatisch/verspielt aus den YAMNet-Musikklassen).
+- **Generator:** Zufalls-Effekte warten, bis der Gesang vorbei ist (Donner und Wind dürfen hinein, einstellbar),
+  warten einmal auf eine gleich kommende ruhige Stelle, starten auf dem nächsten Schlag und kommen je nach Stimmung
+  häufiger/seltener. Szenen und Auslöser (Klingel …) sind davon nicht betroffen.
+- Der Server kennt die **Hörposition** (welches Stück draußen an welcher Sekunde läuft).
+- Oberfläche: **Zeitleiste** je Stück (Pegel, Gesang orange, ruhige Stellen grün), **🎤 Gesang von Hand
+  korrigieren**, Einstellungen unter Szenen → „Zufalls-Effekte passend zur Musik“.
+- API: `POST /api/musik/{id}/analyse`, `PUT /api/musik/{id}/stimme`, Einstellungen-Teil `musik`.
+- Docker-Image lädt das Modell beim Build (`werkzeuge/modell_laden.py`, SHA-256 geprüft).
+
 ## [1.3.2] – 2026-10-28
 
 - **Ambiente-Stück direkt starten:** ▶ an jedem Stück (Sounds → Ambiente) bzw. `POST /api/ambiente/spielen/{id}`.

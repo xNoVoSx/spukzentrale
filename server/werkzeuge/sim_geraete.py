@@ -140,6 +140,15 @@ class Sound:
                                   "fehler": fehler, "meldung": "", "fx_frei_kb": 2000}))
 
     async def _hoeren(self, pfad: str) -> None:
+        """Wie Pi und Firmware: Endet der Stream (Server-Neustart, Sprung zu einem Stück), sofort neu verbinden."""
+        while True:
+            try:
+                await self._hoeren_einmal(pfad)
+            except (OSError, asyncio.IncompleteReadError) as e:
+                print(f"  [sound] Stream: {e}")
+            await asyncio.sleep(1)
+
+    async def _hoeren_einmal(self, pfad: str) -> None:
         # wie die Firmware: HTTP/1.1 mit "Connection: close", Antwort ggf. "chunked"
         host, port = self.basis.split("//")[1].split(":")
         r, w = await asyncio.open_connection(host, int(port))

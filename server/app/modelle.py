@@ -112,11 +112,37 @@ class Stimmungen(BaseModel):
 # ---------------------------------------------------------------------------
 # Medien
 # ---------------------------------------------------------------------------
+Abschnitt = tuple[float, float]   # (von_s, bis_s)
+Stimmungsart = Literal["duester", "ruhig", "dramatisch", "verspielt"]
+
+
+class MusikAnalyse(BaseModel):
+    """Ergebnis von musikanalyse.analysieren() – wird beim Hochladen bzw. Start einmal berechnet."""
+    version: int = 0
+    modell: bool = False                                       # Gesang/Stimmung per YAMNet (sonst leer/geraten)
+    stimme: list[Abschnitt] = Field(default_factory=list)      # erkannter Gesang/Sprache
+    ruhig: list[Abschnitt] = Field(default_factory=list)       # deutlich leisere Stellen
+    bpm: float | None = None                                   # None = kein klarer Takt
+    beat0_s: float = 0.0                                       # erster Schlag (Phase des Takts)
+    stimmung: Stimmungsart = "duester"
+    gewichte: dict[str, float] = Field(default_factory=dict)   # Kategorie -> Faktor für die Häufigkeit
+    pegel: list[int] = Field(default_factory=list)             # 0..100 je Sekunde (Anzeige)
+    stimme_kurve: list[int] = Field(default_factory=list)      # 0..100 je Sekunde (Anzeige)
+
+
 class Musikstueck(BaseModel):
     id: str
     name: str
     dauer_s: float = 0
     groesse: int = 0
+    analyse: MusikAnalyse | None = None
+    stimme_manuell: list[Abschnitt] | None = None              # von Hand korrigiert (None = Erkennung gilt)
+
+    @property
+    def stimme(self) -> list[Abschnitt]:
+        if self.stimme_manuell is not None:
+            return self.stimme_manuell
+        return self.analyse.stimme if self.analyse else []
 
 
 class Playlist(BaseModel):
@@ -312,6 +338,16 @@ class Mqtt(BaseModel):
     discovery: str = Field("homeassistant", pattern=r"^[a-zA-Z0-9_\-/]+$")
 
 
+class MusikAbstimmung(BaseModel):
+    """Zufalls-Effekte passend zum laufenden Ambiente-Stück (Szenen und Auslöser sind davon nicht betroffen)."""
+    aktiv: bool = True
+    ueber_gesang: list[Kategorie] = Field(default_factory=lambda: ["donner", "wind"])   # dürfen in Gesang
+    pausen: bool = True          # auf eine ruhige Stelle warten, wenn bald eine kommt
+    takt: bool = True            # auf den nächsten Schlag legen
+    stimmung: bool = True        # Kategorien je nach Stimmung des Stücks häufiger/seltener
+    max_warten_s: int = Field(45, ge=5, le=300)
+
+
 class Einstellungen(BaseModel):
     licht: LichtEinst = Field(default_factory=LichtEinst)
     ton: TonEinst = Field(default_factory=TonEinst)
@@ -323,6 +359,7 @@ class Einstellungen(BaseModel):
     aufbau: Aufbau = Field(default_factory=Aufbau)
     homeassistant: HomeAssistant = Field(default_factory=HomeAssistant)
     mqtt: Mqtt = Field(default_factory=Mqtt)
+    musik: MusikAbstimmung = Field(default_factory=MusikAbstimmung)
 
     @model_validator(mode="before")
     @classmethod

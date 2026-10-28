@@ -9,6 +9,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# YAMNet für die Musikanalyse (Gesang/Stimmung), Prüfsumme im Skript
+COPY werkzeuge/modell_laden.py ./werkzeuge/
+RUN python werkzeuge/modell_laden.py /app/modelle
+
 COPY app ./app
 COPY static ./static
 

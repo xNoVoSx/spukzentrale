@@ -1,5 +1,6 @@
 """REST-API (für die Weboberfläche und Home Assistant) und WebSockets."""
 
+import asyncio
 import json
 import logging
 import shutil
@@ -66,6 +67,10 @@ class ZonenTest(BaseModel):
 
 class Abspielen(BaseModel):
     vol: int = Field(100, ge=0, le=100)
+
+
+class StimmeKorrektur(BaseModel):
+    stellen: list[tuple[float, float]] | None = Field(None, max_length=200)
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +325,36 @@ async def musik_hochladen(request: Request, datei: Annotated[UploadFile, File()]
         roh.unlink(missing_ok=True)
     s = z.medien.musik_hinzu(Musikstueck(id=mid, name=_anzeigename(datei.filename), dauer_s=round(dauer, 1), groesse=groesse))
     z.protokollieren(f"Musik hochgeladen: {s.name}", "info")
+    z.daten_geaendert()
+    if s.analyse is None:
+        asyncio.create_task(z.musik_analysieren(s.id))
+    return s
+
+
+@router.post("/api/musik/{mid}/analyse")
+async def musik_analyse(request: Request, mid: str):
+    """Stück neu analysieren (läuft im Hintergrund, Ergebnis kommt über die Oberfläche)."""
+    z = zentrale(request)
+    if not z.medien.musik(mid):
+        raise _nicht_gefunden("Dieses Stück")
+    asyncio.create_task(z.musik_analysieren(mid))
+    return {"ok": True}
+
+
+@router.put("/api/musik/{mid}/stimme")
+async def musik_stimme(request: Request, mid: str, d: StimmeKorrektur):
+    """Gesangsstellen von Hand setzen (Liste von [von_s, bis_s]); stellen = null: wieder die Erkennung nehmen."""
+    z = zentrale(request)
+    s = z.medien.musik(mid)
+    if not s:
+        raise _nicht_gefunden("Dieses Stück")
+    if d.stellen is not None:
+        ende = s.dauer_s or 1e9
+        stellen = sorted((max(0.0, min(a, ende)), max(0.0, min(b, ende))) for a, b in d.stellen)
+        s.stimme_manuell = [(a, b) for a, b in stellen if b > a]
+    else:
+        s.stimme_manuell = None
+    z.medien.speichern()
     z.daten_geaendert()
     return s
 

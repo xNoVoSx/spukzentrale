@@ -447,6 +447,41 @@ bereich("licht-stimmungen", "licht", ["daten", "zustand"], () => `
 // ---------------------------------------------------------------------------
 // Seite: Sounds
 // ---------------------------------------------------------------------------
+// Musikanalyse: Zeitleiste (Pegel grau, Gesang orange, ruhige Stellen grün) und Kurzinfo
+const STIMMUNGEN = { duester: "düster", ruhig: "ruhig", dramatisch: "dramatisch", verspielt: "verspielt" };
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, "0")}`;
+const stellenText = (liste) => liste.map(([a, b]) => `${mmss(a)}-${mmss(b)}`).join(", ");
+function stellenLesen(text) {
+  const zeit = (z) => {
+    const m = z.trim().match(/^(?:(\d+):)?(\d+(?:[.,]\d+)?)$/);
+    return m ? Number(m[1] || 0) * 60 + Number(m[2].replace(",", ".")) : NaN;
+  };
+  const stellen = [];
+  for (const teil of text.split(/[;,\n]+/).map((x) => x.trim()).filter(Boolean)) {
+    const [a, b] = teil.split(/\s*[-–]\s*/).map(zeit);
+    if (!(b > a)) return null;
+    stellen.push([a, b]);
+  }
+  return stellen;
+}
+function analyseText(s) {
+  const a = s.analyse;
+  if (S.medien.analyse_laeuft?.includes(s.id)) return "Analyse läuft …";
+  if (!a) return "noch nicht analysiert";
+  const gesang = s.stimme_manuell ?? a.stimme;
+  const g = gesang.length ? `Gesang an ${gesang.length} Stelle${gesang.length > 1 ? "n" : ""}` : "kein Gesang";
+  return `${STIMMUNGEN[a.stimmung] ?? a.stimmung}${a.bpm ? ` · ${Math.round(a.bpm)} BPM` : ""} · ${g}${s.stimme_manuell ? " (von Hand)" : ""}${a.modell ? "" : " · ohne Gesangserkennung"}`;
+}
+function zeitleiste(s) {
+  const a = s.analyse;
+  if (!a || !s.dauer_s) return "";
+  const d = s.dauer_s;
+  const balken = (liste, farbe, deck) => liste.map(([x, y]) => `<rect x="${x}" y="0" width="${Math.max(0.5, y - x)}" height="16" fill="${farbe}" opacity="${deck}"/>`).join("");
+  const pegel = a.pegel.map((v, i) => `<rect x="${i}" y="${16 - v * 0.14}" width="1" height="${v * 0.14}" fill="currentColor" opacity=".35"/>`).join("");
+  return `<svg class="zeitleiste" viewBox="0 0 ${d} 16" preserveAspectRatio="none" role="img"
+    aria-label="Zeitleiste: Gesang orange, ruhige Stellen grün">${balken(a.ruhig, "#3fbf6f", ".35")}${pegel}${balken(s.stimme_manuell ?? a.stimme, "#ff8a1f", ".6")}</svg>`;
+}
+
 bereich("sounds-ambiente", "sounds", ["medien", "zustand", "daten"], () => {
   const m = S.medien;
   const pl = m.playlist;
@@ -456,13 +491,15 @@ bereich("sounds-ambiente", "sounds", ["medien", "zustand", "daten"], () => {
     if (!s) return "";
     const laeuft = S.ambiente_jetzt === s.name;
     return `
-      <li>
+      <li class="musik">
         <div class="name">${laeuft ? "▶️ " : ""}${esc(s.name)}<small>${dauer(s.dauer_s * 1000)}</small></div>
         <button class="klein symbol lila" data-aktion="musik-spielen" data-id="${s.id}" title="Jetzt draußen spielen">▶</button>
         <button class="klein symbol" data-aktion="musik-hoch" data-i="${i}" ${i ? "" : "disabled"} title="Nach oben">↑</button>
         <button class="klein symbol" data-aktion="vorhoeren" data-url="/api/musik/${s.id}/datei" title="Im Browser anhören">🎧</button>
+        <button class="klein symbol" data-aktion="musik-gesang" data-id="${s.id}" title="Gesangsstellen korrigieren">🎤</button>
         <button class="klein symbol" data-aktion="musik-umbenennen" data-id="${s.id}" title="Umbenennen">✏️</button>
         <button class="klein symbol gefahr" data-aktion="musik-loeschen" data-id="${s.id}" title="Löschen">🗑</button>
+        <div class="analyse">${zeitleiste(s)}<small>${analyseText(s)}</small></div>
       </li>`;
   }).join("");
   return `
@@ -571,6 +608,19 @@ function regelZeile(r, i) {
       </div>
     </div>`;
 }
+
+bereich("szenen-musik", "szenen", ["daten"], () => {
+  const m = S.einstellungen.musik;
+  const haken = kategorien().map(([k, name]) => `<label class="chip"><input type="checkbox" name="ueber_gesang" value="${k}" data-liste ${m.ueber_gesang.includes(k) ? "checked" : ""}> ${esc(name)}</label>`).join("");
+  return abschnitt("e-musik", "🎼 Zufalls-Effekte passend zur Musik", "musik", `
+    ${kasten("aktiv", "Auf das laufende Stück abstimmen", m.aktiv, "nur Zufalls-Effekte – Szenen und Auslöser (Klingel …) kommen immer sofort")}
+    <div class="feld"><span>Dürfen auch während Gesang kommen</span><div class="chips">${haken}</div></div>
+    ${kasten("pausen", "Ruhige Stellen bevorzugen", m.pausen, "kommt bald eine leise Stelle, wartet der Effekt darauf")}
+    ${kasten("takt", "Auf den Schlag legen", m.takt, "Effekt startet mit dem nächsten Schlag der Musik")}
+    ${kasten("stimmung", "Nach Stimmung des Stücks", m.stimmung, "z. B. bei düsterer Musik öfter Wind und Ketten, bei dramatischer öfter Donner")}
+    ${feld("max_warten_s", "Höchstens so lange auf das Ende von Gesang warten (s)", "number", m.max_warten_s, 'min="5" max="300"')}
+    <p class="hinweis">Die Analyse (Gesang, ruhige Stellen, Takt, Stimmung) siehst du unter Sounds → Ambiente an jedem Stück; Gesang lässt sich dort mit 🎤 korrigieren.</p>`);
+});
 
 bereich("szenen-ereignisse", "szenen", ["daten", "medien"], () => {
   if (!regelEntwurf) regelEntwurf = structuredClone(S.ereignisse);
@@ -911,6 +961,11 @@ function formDaten(form) {
   const d = {};
   for (const el of form.elements) {
     if (!el.name) continue;
+    if (el.type === "checkbox" && el.dataset.liste !== undefined) {   // mehrere Häkchen -> Liste der Werte
+      (d[el.name] ??= []);
+      if (el.checked) d[el.name].push(el.value);
+      continue;
+    }
     let w;
     if (el.type === "checkbox") w = el.checked;
     else if (el.type === "number" || el.type === "range" || el.dataset.typ === "zahl") w = Number(el.value);
@@ -1157,6 +1212,25 @@ const AKTIONEN = {
     const name = await textAbfrage("Stück umbenennen", s.name);
     if (name) await api("PUT", `/api/musik/${s.id}`, { name });
   },
+  "musik-gesang": async (el) => {
+    const s = S.medien.musik.find((x) => x.id === el.dataset.id);
+    const erkannt = s.analyse?.stimme ?? [];
+    const jetzt = s.stimme_manuell ?? erkannt;
+    const ergebnis = await dialog(`
+      <h2>Gesang in „${esc(s.name)}“</h2>
+      <p class="hinweis">Während Gesang kommen keine Zufalls-Effekte (außer den Kategorien, die unter Szenen → „Zufalls-Effekte passend zur Musik“ erlaubt sind).
+        Stellen als <b>von–bis</b>, mit Komma getrennt, z. B. <code>0:20-0:58, 1:05-2:49</code>. Leer = kein Gesang.</p>
+      <label class="feld"><span>Gesangsstellen</span><input type="text" name="stellen" value="${esc(stellenText(jetzt))}"></label>
+      <p class="hinweis">Erkannt: ${esc(stellenText(erkannt) || "kein Gesang")}${s.stimme_manuell ? " · gerade gilt deine Korrektur" : ""}</p>
+      <label class="schalter-zeile"><div>Wieder die Erkennung nehmen</div><span class="schalter"><input type="checkbox" name="auto"><i></i></span></label>`,
+      (f) => ({ auto: f.elements.auto.checked, text: f.elements.stellen.value }));
+    if (!ergebnis) return;
+    if (ergebnis.auto) return api("PUT", `/api/musik/${s.id}/stimme`, { stellen: null });
+    const stellen = stellenLesen(ergebnis.text);
+    if (stellen === null) return toast("Format nicht erkannt – z. B. 0:20-0:58, 1:05-2:49");
+    await api("PUT", `/api/musik/${s.id}/stimme`, { stellen });
+  },
+  "musik-analyse": (el) => api("POST", `/api/musik/${el.dataset.id}/analyse`),
   "musik-loeschen": async (el) => {
     if (confirm("Stück löschen?")) await api("DELETE", `/api/musik/${el.dataset.id}`);
   },

@@ -16,3 +16,6 @@ __pycache__/
 
 # Editor
 *.kate-swp
+
+# YAMNet-Modell (lädt der Docker-Build, siehe server/Dockerfile)
+server/modelle/

@@ -7,6 +7,7 @@ offenen Oberflächen.
 
 import asyncio
 import collections
+import concurrent.futures
 import json
 import logging
 import random
@@ -21,9 +22,10 @@ from .ambiente import Ambiente
 from .geraete import Geraet, Geraete
 from .licht import EspLicht, LichtAusgang
 from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
+from . import musikanalyse
 from .modelle import (
     GEHEIM_PLATZHALTER, GEHEIME_FELDER, KATEGORIEN, AKTIONEN, EFFEKTE, Ausloeser, Effekt, Einstellungen, Ereignisse,
-    LichtAktion, LichtZustand, Regel, Stimmung, Stimmungen, Szene, Szenen, TonEinst, Zone, Zustand,
+    LichtAktion, LichtZustand, Musikstueck, Regel, Stimmung, Stimmungen, Szene, Szenen, TonEinst, Zone, Zustand,
 )
 from .speicher import lade, speichere
 from . import vorgaben
@@ -60,6 +62,9 @@ class Zentrale:
         self._letzter_fx_sync = 0.0
         self._letzte_ausloesung: dict[str, float] = {}
         self._zuletzt_gespielt: dict[str, str] = {}
+        # Musikanalyse: ein Arbeiter (rechenintensiv, nacheinander), wartende IDs
+        self._analyse_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="analyse")
+        self.analyse_laeuft: set[str] = set()
         self.beobachter: list[Callable[[str], None]] = []  # z. B. MQTT: bei Änderungen benachrichtigen
 
         # werden in main.py gesetzt (brauchen die Zentrale selbst)
@@ -168,6 +173,7 @@ class Zentrale:
             "fx": [f.model_dump() for f in self.medien.daten.fx],
             "fx_belegt_kb": self.medien.fx_belegt_kb(),
             "fx_kapazitaet_kb": self.fx_kapazitaet_kb(),
+            "analyse_laeuft": sorted(self.analyse_laeuft),
         }
 
     def alles(self) -> dict:
@@ -450,6 +456,41 @@ class Zentrale:
             if g and g.hallo.get("plattform") == "pi":
                 await g.senden({"t": "musik", "aktion": "sprung", "pfad": "/stream/ambiente"})
         self._zustand_geaendert()
+
+    async def musik_analysieren(self, mid: str) -> None:
+        """Stück analysieren (Gesang, Ruhe, Takt, Stimmung) und speichern. Läuft im Hintergrund-Thread."""
+        if mid in self.analyse_laeuft:
+            return
+        self.analyse_laeuft.add(mid)
+        self.daten_geaendert()
+        try:
+            pfad = self.medien.musik_pfad(mid)
+            a = await asyncio.get_running_loop().run_in_executor(self._analyse_pool, musikanalyse.analysieren, pfad)
+            s = self.medien.musik(mid)
+            if s:
+                s.analyse = a
+                self.medien.speichern()
+                log.info("Analyse %s: %s, %s BPM, Gesang %d Abschnitte", s.name, a.stimmung, a.bpm, len(a.stimme))
+        except Exception:
+            log.exception("Musikanalyse %s fehlgeschlagen", mid)
+        finally:
+            self.analyse_laeuft.discard(mid)
+            self.daten_geaendert()
+
+    async def analysen_nachholen(self) -> None:
+        """Beim Start: Stücke ohne (aktuelle) Analyse nacheinander analysieren."""
+        for s in list(self.medien.daten.musik):
+            if s.analyse is None or s.analyse.version < musikanalyse.ANALYSE_VERSION:
+                await self.musik_analysieren(s.id)
+
+    def musik_lage(self) -> tuple[Musikstueck | None, float | None]:
+        """Welches Ambiente-Stück ist draußen gerade an welcher Sekunde zu hören? (None, None) ohne Ambiente."""
+        if not self.zustand.ambiente_an or not self.geraete.verbunden("sound"):
+            return None, None
+        p = self.ambiente.position()
+        if p is None:
+            return None, None
+        return self.medien.musik(p[0]), p[1]
 
     async def ambiente_weiter(self) -> None:
         """Nächstes Stück – sofort zu hören (wie ambiente_spielen mit dem Nachfolger des laufenden Stücks)."""

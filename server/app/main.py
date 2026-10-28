@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(z.generator.lauf(), name="ereignisse"),
         asyncio.create_task(zeitplan.lauf(), name="zeitplan"),
+        asyncio.create_task(z.analysen_nachholen(), name="musikanalyse"),
     ]
     ha.neu_starten()
     mqtt.neu_starten()
