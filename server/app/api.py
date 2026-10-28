@@ -356,9 +356,9 @@ async def playlist(request: Request, d: Playlist):
 
 
 @router.get("/stream/ambiente")
-async def stream(request: Request):
+async def stream(request: Request, puffer_s: float = Query(0, ge=0, le=60)):
     return StreamingResponse(
-        zentrale(request).ambiente.hoeren(), media_type="audio/mpeg",
+        zentrale(request).ambiente.hoeren(puffer_s), media_type="audio/mpeg",
         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
     )
 

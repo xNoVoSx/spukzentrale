@@ -8,6 +8,10 @@
 // d. h. das Licht reagiert genau dann, wenn der Ton aus der Box kommt.
 // Startet der Sound-ESP einen Effekt mit Licht-Aktion, schickt er die Aktion
 // ebenfalls über diese Leitung – so sitzt der Blitz exakt auf dem Donner.
+//
+// Mit dem Raspberry Pi (ab 1.3) hängt der Licht-ESP per USB am Pi. Über die USB-Leitung laufen dieselben Rahmen
+// (Pi -> ESP) und zusätzlich die WebSocket-Nachrichten des Servers als JSON-Zeilen: 0x1E <json> '\n' in beide
+// Richtungen. Alles andere, was der ESP schreibt, ist Klartext-Log.
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
@@ -16,6 +20,10 @@
 namespace spuk {
 
 constexpr uint32_t UART_BAUD = 115200;
+// USB-Leitung Pi <-> Licht-ESP. Nicht höher: Der CH340 hat nur 32 Byte Puffer – bei 460800 Baud verliert der
+// USB-Controller des Pi 3 ganze Pakete (~30 Byte mitten in langen Zeilen). 115200 reicht für 100 Rahmen/s locker.
+constexpr uint32_t USB_BAUD = 115200;
+constexpr uint8_t JSON_START = 0x1E;    // leitet eine JSON-Zeile ein (Record Separator)
 constexpr uint8_t SYNC1 = 0xA5;
 constexpr uint8_t SYNC2 = 0x5A;
 constexpr uint8_t MAX_PAYLOAD = 32;
@@ -24,6 +32,7 @@ enum MsgTyp : uint8_t {
   MSG_HUELLE = 1,      // Sound -> Licht, Payload: Huelle
   MSG_HERZSCHLAG = 2,  // beide Richtungen, Payload: leer
   MSG_AKTION = 3,      // Sound -> Licht, Payload: LichtAktion
+  MSG_SPEKTRUM = 4,    // Pi -> Licht, Payload: Spektrum (ca. 100x/s, wie die Hüllkurve verzögert)
 };
 
 // Einmal-Aktionen des Licht-ESP. Die Namen sind Teil des WebSocket-Protokolls
@@ -81,6 +90,14 @@ struct __attribute__((packed)) LichtAktion {
 };
 static_assert(sizeof(LichtAktion) <= MAX_PAYLOAD, "LichtAktion zu groß");
 
+// Musik-Analyse des Pi: Pegel in drei Bändern (automatisch normiert) und erkannte Schläge
+struct __attribute__((packed)) Spektrum {
+  uint8_t bass;    // 0..255
+  uint8_t mitte;
+  uint8_t hoehen;
+  uint8_t beat;    // > 0 nur im Takt eines erkannten Schlags: Stärke 1..255
+};
+
 // Baut einen Rahmen in out (mind. len + 5 Bytes), gibt die Gesamtlänge zurück.
 inline size_t baueRahmen(uint8_t typ, const void* payload, uint8_t len, uint8_t* out) {
   out[0] = SYNC1;
@@ -101,6 +118,7 @@ inline size_t baueRahmen(uint8_t typ, const void* payload, uint8_t len, uint8_t*
 // vollständiger, gültiger Rahmen in typ/len/payload bereitliegt.
 class RahmenLeser {
  public:
+  bool leer() const { return zustand_ == 0; }  // gerade kein Rahmen angefangen
   uint8_t typ = 0;
   uint8_t len = 0;
   uint8_t payload[MAX_PAYLOAD] = {0};

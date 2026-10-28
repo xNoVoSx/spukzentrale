@@ -32,7 +32,7 @@ const AKTION_NAMEN = {
 const EFFEKT_NAMEN = {
   aus: "Aus", an: "An", flackern: "Kerze", feuer: "Feuer", atmen: "Atmen", herzschlag: "Herzschlag",
   strobo: "Stroboskop", gewitter: "Gewitter", lauflicht: "Lauflicht", wandern: "Geist wandert", pingpong: "Ping-Pong",
-  neon: "Kaputte Röhre", zufall: "Zufall", musik: "Zur Musik",
+  neon: "Kaputte Röhre", zufall: "Zufall", musik: "Zur Musik", spektrum: "Spektrum (Bass → Höhen)", beat: "Beat-Blitz",
 };
 const KATEGORIE_SYMBOL = {
   donner: "⚡", schrei: "😱", lachen: "🧙", herz: "❤️", wind: "🌬️", kette: "⛓️", kettensaege: "🪚", stimme: "🗣️", sonstiges: "👻", system: "🔧",
@@ -685,7 +685,8 @@ bereich("einst-ton", "einstellungen", ["daten"], () => {
     ${regler("ton", "Ducking", t.duck, 'data-feld="duck"', 0, 100, " %")}
     ${regler("ton", "Latenz", t.latenz_ms, 'data-feld="latenz_ms"', 0, 300, " ms")}
     <button type="button" class="lila" data-aktion="latenz-test">Ton-Licht-Abgleich: Klick + Blitz</button>
-    <p class="hinweis">Draußen stehen und „Klick + Blitz“ drücken: Latenz so einstellen, dass Klick und Blitz genau zusammenfallen. Mit dem DAC über AUX passen meist 40–80 ms.</p>`);
+    <p class="hinweis">Draußen stehen und „Klick + Blitz“ drücken: Latenz so einstellen, dass Klick und Blitz genau zusammenfallen. Mit dem DAC über AUX passen meist 40–80 ms.</p>
+    ${S.geraete.sound?.hallo?.plattform === "pi" ? `<p class="hinweis">Raspberry Pi: Er misst seine Ausgabe-Latenz selbst (gerade ${S.geraete.sound.status?.latenz_gemessen_ms ?? "?"} ms) – hier nur noch das Extra eintragen, z. B. für eine Bluetooth-Box. Über AUX: 0 ms.</p>` : ""}`);
 });
 
 bereich("einst-licht", "einstellungen", ["daten"], () => {
@@ -808,12 +809,34 @@ bereich("einst-aufbau", "einstellungen", ["daten"], () => {
 bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
   const zeile = (rolle, titel) => {
     const g = S.geraete[rolle];
+    const pi = g?.hallo?.plattform === "pi";
+    if (pi) titel = "Sound (Raspberry Pi)";
+    if (rolle === "licht" && g?.hallo?.verbindung === "usb") titel = "Licht-ESP (USB am Pi)";
     if (!g?.verbunden) return `<li><div class="name">${titel}<small>nicht verbunden</small></div><span class="marke">offline</span></li>`;
     const s = g.status || {};
     // nur bei anderer Haupt-/Unterversion warnen (1.2.x passt zusammen; Patch-Versionen betreffen oft nur eine Seite)
     const hauptversion = (v) => String(v || "").split(".").slice(0, 2).join(".");
     const versionWarnung = hauptversion(g.fw) !== hauptversion(S.version) ? ` · ⚠️ Firmware ${esc(g.fw)} passt nicht zu Server ${esc(S.version)}` : "";
-    const audioDiagnose = rolle === "sound" ? `
+    const quelle = { stream: "Stream", ersatz: "⚠️ Ersatz (Mitschnitt)", puffert: "puffert …", aus: "aus" };
+    const piDiagnose = pi ? `
+      <div style="margin-top:10px;padding:10px;border:1px solid var(--rand);border-radius:8px;background:var(--karte);">
+        <strong>Audio-Diagnose (Pi)</strong>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px;">
+          <div><small>Musikstream</small><div>${s.musik ? (s.musik_spielt ? "Läuft" : "Verbindet …") : "Aus"}</div></div>
+          <div><small>Quelle</small><div>${quelle[s.musik_quelle] ?? "?"}</div></div>
+          <div><small>Vorrat</small><div>${s.puffer_s ?? "?"} s</div></div>
+          <div><small>Aussetzer gesamt</small><div style="font-weight:700;color:${(s.unterlaeufe ?? 0) > 0 ? "var(--orange)" : "inherit"}">${s.unterlaeufe ?? "?"}</div></div>
+          <div><small>Lücken überbrückt</small><div>${s.ersatz_wechsel ?? 0}</div></div>
+          <div><small>Stream neu verbunden</small><div>${s.neuverbindungen ?? 0}</div></div>
+          <div><small>Latenz (gemessen)</small><div>${s.latenz_gemessen_ms ?? "?"} ms</div></div>
+          <div><small>Effekte aktiv</small><div>${s.stimmen ?? "?"}</div></div>
+        </div>
+        ${s.alsa === false ? '<p class="hinweis warnung">⚠️ Audio-Ausgabe (DAC) nicht verfügbar</p>' : ""}
+        ${s.alsa_xruns ? `<p class="hinweis warnung">⚠️ ${s.alsa_xruns} Ausgabe-Unterläufe (Pi zu langsam?)</p>` : ""}
+        ${s.sync ? '<p class="hinweis">Effekte werden abgeglichen …</p>' : ""}
+        <small>Pi: ${s.pi_temp != null ? s.pi_temp.toFixed(0) + " °C" : "?"} · Last ${s.pi_last ?? "?"} · SD frei ${s.pi_sd_frei_mb != null ? (s.pi_sd_frei_mb / 1024).toFixed(1) + " GB" : "?"}${(s.pi_gedrosselt_text || []).length ? ` · ⚠️ ${esc(s.pi_gedrosselt_text.join(", "))}` : ""}</small>
+      </div>` : "";
+    const audioDiagnose = pi ? piDiagnose : rolle === "sound" ? `
       <div style="margin-top:10px;padding:10px;border:1px solid var(--rand);border-radius:8px;background:var(--karte);">
         <strong>Audio-Diagnose</strong>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px;">
@@ -829,9 +852,10 @@ bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
         ${s.format_fehler ? '<p class="hinweis warnung">⚠️ Stream-Formatfehler gemeldet</p>' : ""}
         ${s.sync ? '<p class="hinweis">Effekte werden abgeglichen …</p>' : ""}
       </div>` : "";
+    const usb = s.verbindung === "usb" || g.hallo?.verbindung === "usb";
     const geraeteDetails = rolle === "licht"
-      ? `${s.fps ?? "?"} Bilder/s · ${s.uart ? "Kabel zum Sound-ESP ok" : "⚠️ kein Signal vom Sound-ESP"}`
-      : `${s.uart ? "Kabel ok" : "⚠️ kein Signal vom Licht-ESP"}`;
+      ? `${s.fps ?? "?"} Bilder/s · ${usb ? (s.uart ? "USB zum Pi ok" : "⚠️ kein Signal vom Pi") : (s.uart ? "Kabel zum Sound-ESP ok" : "⚠️ kein Signal vom Sound-ESP")}`
+      : pi ? `${s.uart ? "Licht-ESP am USB ok" : "kein Licht-ESP am USB"}` : `${s.uart ? "Kabel ok" : "⚠️ kein Signal vom Licht-ESP"}`;
     // Stabilität: Neustart-Grund, WLAN-Trennungen, längster Hänger der Hauptschleife (seit dem letzten Status)
     const stabil = s.neustart_grund === undefined ? "" : [
       `Start: ${esc(s.neustart_grund)}${["Strom an", "Reset-Taste", "Neustart"].includes(s.neustart_grund) ? "" : " ⚠️"}`,
@@ -842,7 +866,7 @@ bereich("einst-geraete", "einstellungen", ["geraete", "daten"], () => {
     return `
       <li>
         <div class="name">${titel} <span class="marke orange">online</span>
-          <small>IP ${esc(g.ip)} · FW ${esc(g.fw)}${versionWarnung} · WLAN ${s.rssi ?? "?"} dBm · Speicher frei ${s.heap ? Math.round(s.heap / 1024) + " KB" : "?"}</small>
+          <small>IP ${esc(g.ip)} · FW ${esc(g.fw)}${versionWarnung} · ${usb ? "kein WLAN (USB)" : `WLAN ${s.rssi ?? "?"} dBm`} · Speicher frei ${s.heap ? (s.heap > 4e6 ? Math.round(s.heap / 1048576) + " MB" : Math.round(s.heap / 1024) + " KB") : "?"}</small>
           <small>${geraeteDetails}</small>
           ${stabil ? `<small>${stabil}</small>` : ""}
           ${audioDiagnose}

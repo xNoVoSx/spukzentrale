@@ -53,3 +53,45 @@ async def test_leere_playlist_liefert_stille():
     block = await gen.__anext__()
     assert block.shape[1] == 2 and not block.any()
     await gen.aclose()
+
+
+async def test_rueckblick_puffer_s_fuer_den_pi():
+    """Standard-Zuhörer (ESP) bekommen ~2,5 s vorweg, der Pi mit puffer_s deutlich mehr."""
+    import asyncio
+
+    from app import ambiente as amb
+
+    a = Ambiente(MedienVerwaltung())
+    for _ in range(1000):                      # wie der Encoder: einzelne MP3-Frames, 1000 × 418 B ≈ 26 s
+        a._verteilen(bytes(418))
+    assert a._rueckblick_bytes <= amb.RUECKBLICK_MAX_S * amb.MP3_BYTES_S
+    a._task = asyncio.get_running_loop().create_future()   # „Encoder läuft“ vortäuschen
+
+    async def vorweg(**kw) -> int:
+        n = 0
+        gen = a.hoeren(**kw)
+        n += len(await gen.__anext__())
+        for q in a._zuhoerer:                  # alles Vorweg liegt schon in der Warteschlange
+            q.put_nowait(None)
+        async for block in gen:
+            n += len(block)
+        return n
+
+    standard = await vorweg()
+    pi = await vorweg(puffer_s=15)
+    assert amb.RUECKBLICK_BYTES <= standard < amb.RUECKBLICK_BYTES + 418
+    assert 15 * amb.MP3_BYTES_S <= pi < 15 * amb.MP3_BYTES_S + 418
+
+
+def test_vorlauf_folgt_dem_puffer_wunsch():
+    import asyncio
+
+    from app import ambiente as amb
+
+    a = Ambiente(MedienVerwaltung())
+    assert a.vorlauf_s == amb.VORLAUF_S
+    q: asyncio.Queue = asyncio.Queue()
+    a._wunsch[q] = 15
+    assert a.vorlauf_s == 15
+    a._wunsch[q] = 60                       # gedeckelt: der Rückblick muss den Vorlauf noch fassen
+    assert a.vorlauf_s == amb.RUECKBLICK_MAX_S - 2

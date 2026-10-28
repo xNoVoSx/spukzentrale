@@ -6,7 +6,8 @@ beim Wiederholen keine Lücken (MP3-Dateien haben am Anfang/Ende Stille) und der
 muss nur einen einzigen Stream abspielen – wie ein Internetradio.
 
 Der Encoder wird in Echtzeit (mit kleinem Vorlauf) gefüttert. Neue Zuhörer bekommen
-zuerst die letzten Sekunden als Puffer, damit der ESP sofort loslegen kann.
+zuerst die letzten Sekunden als Puffer, damit der ESP sofort loslegen kann. Der Raspberry Pi fragt mit
+puffer_s nach mehr (bis RUECKBLICK_MAX_S) und hält damit einen großen Vorrat gegen WLAN-Aussetzer.
 """
 
 import asyncio
@@ -28,9 +29,11 @@ RATE = 44100
 KANAELE = 2
 STUECK_FRAMES = 4410          # 100 ms pro Verarbeitungsschritt
 VORLAUF_S = 1.5               # so weit darf der Encoder der Echtzeit voraus sein
-RUECKBLICK_BYTES = 40 * 1024  # ca. 2,5 s MP3 für neue Zuhörer
+RUECKBLICK_BYTES = 40 * 1024  # ca. 2,5 s MP3 für neue Zuhörer (Standard, passt in den Puffer des Sound-ESP)
+MP3_BYTES_S = 128_000 // 8
+RUECKBLICK_MAX_S = 20         # so viel hält der Server vor (Zuhörer mit puffer_s, z. B. der Pi)
 LEERLAUF_S = 20               # ohne Zuhörer wird der Encoder danach beendet
-ZUHOERER_PUFFER = 256         # Blöcke à 4 KB pro Zuhörer, danach wird er getrennt
+ZUHOERER_PUFFER = 4096        # Blöcke (meist einzelne MP3-Frames ~400 B) pro Zuhörer, danach wird er getrennt
 
 
 class Ambiente:
@@ -43,6 +46,14 @@ class Ambiente:
         self._rueckblick_bytes = 0
         self._task: asyncio.Task | None = None
         self._weiter = asyncio.Event()
+        self._wunsch: dict[asyncio.Queue, float] = {}     # puffer_s je Zuhörer (Pi)
+        self._anzeige: asyncio.TimerHandle | None = None   # verzögerter Titelwechsel
+
+    @property
+    def vorlauf_s(self) -> float:
+        """So weit läuft der Encoder der Echtzeit voraus: Standard 1,5 s; fragt ein Zuhörer (der Pi) nach mehr
+        Vorrat, entsprechend mehr – sonst könnte sein Vorrat nach einem Start nie wachsen."""
+        return min(max([VORLAUF_S, *self._wunsch.values()]), RUECKBLICK_MAX_S - 2)
 
     # ------------------------------------------------------------------
     @property
@@ -58,6 +69,9 @@ class Ambiente:
         self._weiter.set()
 
     async def stoppen(self) -> None:
+        if self._anzeige:
+            self._anzeige.cancel()
+            self._anzeige = None
         if self._task:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -65,12 +79,25 @@ class Ambiente:
             self._task = None
         self._setze_jetzt(None)
 
-    async def hoeren(self) -> AsyncIterator[bytes]:
-        """MP3-Daten für einen Zuhörer (Sound-ESP oder Browser)."""
+    async def hoeren(self, puffer_s: float = 0) -> AsyncIterator[bytes]:
+        """MP3-Daten für einen Zuhörer (Sound-ESP, Pi oder Browser). puffer_s: so viele Sekunden aus der
+        Vergangenheit vorweg (Standard ~2,5 s)."""
         q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=ZUHOERER_PUFFER)
-        for block in self._rueckblick:
-            q.put_nowait(block)
+        gewuenscht = RUECKBLICK_BYTES if puffer_s <= 0 else int(min(puffer_s, RUECKBLICK_MAX_S) * MP3_BYTES_S)
+        vorweg: list[bytes] = []
+        summe = 0
+        for block in reversed(self._rueckblick):
+            if summe >= gewuenscht and vorweg:
+                break
+            vorweg.append(block)
+            summe += len(block)
+        # Der Encoder liefert einzelne MP3-Frames (~400 Byte) – für die Warteschlange zu großen Stücken bündeln
+        daten = b"".join(reversed(vorweg))
+        for i in range(0, len(daten), 65536):
+            q.put_nowait(daten[i:i + 65536])
         self._zuhoerer.add(q)
+        if puffer_s > 0:
+            self._wunsch[q] = float(puffer_s)
         if not self.laeuft:
             self._task = asyncio.create_task(self._sender(), name="ambiente")
         try:
@@ -81,6 +108,7 @@ class Ambiente:
                 yield block
         finally:
             self._zuhoerer.discard(q)
+            self._wunsch.pop(q, None)
 
     # ------------------------------------------------------------------
     def _setze_jetzt(self, name: str | None) -> None:
@@ -89,10 +117,20 @@ class Ambiente:
             if self.bei_wechsel:
                 self.bei_wechsel(name)
 
+    def _jetzt_beim_hoeren(self, name: str) -> None:
+        """Titel erst anzeigen, wenn er zu hören ist (der Encoder läuft bis zu vorlauf_s voraus)."""
+        if self._anzeige:
+            self._anzeige.cancel()
+            self._anzeige = None
+        if self.vorlauf_s <= 3:
+            self._setze_jetzt(name)
+        else:
+            self._anzeige = asyncio.get_running_loop().call_later(self.vorlauf_s, self._setze_jetzt, name)
+
     def _verteilen(self, block: bytes) -> None:
         self._rueckblick.append(block)
         self._rueckblick_bytes += len(block)
-        while self._rueckblick_bytes > RUECKBLICK_BYTES and len(self._rueckblick) > 1:
+        while self._rueckblick_bytes > RUECKBLICK_MAX_S * MP3_BYTES_S and len(self._rueckblick) > 1:
             self._rueckblick_bytes -= len(self._rueckblick.popleft())
         for q in list(self._zuhoerer):
             try:
@@ -100,6 +138,7 @@ class Ambiente:
             except asyncio.QueueFull:
                 log.warning("Ambiente: Zuhörer kommt nicht hinterher – Verbindung wird getrennt")
                 self._zuhoerer.discard(q)
+                self._wunsch.pop(q, None)
                 with contextlib.suppress(asyncio.QueueFull):
                     q.get_nowait()
                     q.put_nowait(None)
@@ -129,8 +168,9 @@ class Ambiente:
                 gesendet += len(pcm)
                 # Echtzeit halten
                 voraus = gesendet / RATE - (time.monotonic() - start)
-                if voraus > VORLAUF_S:
-                    await asyncio.sleep(voraus - VORLAUF_S)
+                vorlauf = self.vorlauf_s
+                if voraus > vorlauf:
+                    await asyncio.sleep(voraus - vorlauf)
                 elif voraus < -2:  # z. B. nach Hänger: Uhr nachziehen statt aufholen
                     start = time.monotonic() - gesendet / RATE
                 # ohne Zuhörer irgendwann aufhören
@@ -179,7 +219,7 @@ class Ambiente:
                 stueck = self.medien.musik(mid)
                 if not stueck:
                     continue
-                self._setze_jetzt(stueck.name)
+                self._jetzt_beim_hoeren(stueck.name)
                 async for block, rest in self._stueck(mid, rest):
                     yield block
 

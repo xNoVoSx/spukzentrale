@@ -29,6 +29,8 @@ enum Effekt : uint8_t {
   E_NEON,
   E_ZUFALL,
   E_MUSIK,
+  E_SPEKTRUM,   // Zonen folgen den Bändern (links Bass, rechts Höhen) – Analyse vom Pi
+  E_BEAT,       // Blitz auf jeden Schlag, klingt ab (Tempo = Abklingzeit)
   E_ANZAHL
 };
 
@@ -73,6 +75,8 @@ class Lichtmaschine {
 
   // Hüllkurve vom Sound-ESP (0..255). Ruft man ca. 100x/s auf.
   void huelle(uint8_t musik, uint8_t fx, uint32_t jetztMs);
+  // Spektrum vom Pi (0..255 je Band, beat > 0 = Schlag). Ohne Spektrum nutzen die Effekte die Hüllkurve.
+  void spektrum(uint8_t bass, uint8_t mitte, uint8_t hoehen, uint8_t beat, uint32_t jetztMs);
 
   // Berechnet alle Zonen; ausgabe[i] linear 0..1.
   void berechne(uint32_t jetztMs, float* ausgabe);
@@ -137,6 +141,11 @@ class Lichtmaschine {
   float hist_[HUELLE_HISTORIE] = {0};
   uint8_t histPos_ = 0;
   uint32_t letzteHuelle_ = 0;
+  float band_[3] = {0, 0, 0};
+  float schlag_ = 0;          // Hüllkurve der Schläge (springt auf die Schlagstärke, klingt ab)
+  uint32_t schlaege_ = 0;     // Zähler (wechselndes Muster bei E_BEAT)
+  uint32_t letztesSpektrum_ = 0;
+  bool hatSpektrum(uint32_t t) const { return letztesSpektrum_ && t - letztesSpektrum_ < 500; }
 };
 
 }  // namespace spuk

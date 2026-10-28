@@ -12,7 +12,8 @@ constexpr float PI_F = 3.14159265f;
 const char* const EFFEKT_NAMEN[E_ANZAHL] = {
     "aus",    "an",       "flackern", "feuer",   "atmen",
     "herzschlag", "strobo", "gewitter", "lauflicht", "wandern",
-    "pingpong", "neon",   "zufall",   "musik"};
+    "pingpong", "neon",   "zufall",   "musik",   "spektrum",
+    "beat"};
 
 
 inline float clamp01(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
@@ -120,6 +121,21 @@ void Lichtmaschine::huelle(uint8_t musik, uint8_t fx, uint32_t jetztMs) {
 
   hist_[histPos_] = musikNorm_;
   histPos_ = (histPos_ + 1) % HUELLE_HISTORIE;
+}
+
+void Lichtmaschine::spektrum(uint8_t bass, uint8_t mitte, uint8_t hoehen, uint8_t beat, uint32_t jetztMs) {
+  letztesSpektrum_ = jetztMs;
+  const uint8_t roh[3] = {bass, mitte, hoehen};
+  for (int k = 0; k < 3; k++) {
+    float v = roh[k] / 255.0f;
+    // schnell hoch, etwas langsamer runter (sonst zappelt es)
+    band_[k] = v > band_[k] ? v : band_[k] * 0.82f + v * 0.18f;
+  }
+  if (beat) {
+    float st = 0.45f + 0.55f * (beat / 255.0f);
+    if (st > schlag_) schlag_ = st;
+    schlaege_++;
+  }
 }
 
 // Blitzfolge aus einem Startwert: 1–4 Blitze mit Nachglühen
@@ -284,6 +300,26 @@ float Lichtmaschine::basisWert(int i, ZonenZustand& z, uint32_t t, float dt) {
       return b + (a - b) * z.zufallWert;
     }
 
+    case E_SPEKTRUM: {
+      // Zonen über die Bänder verteilt: links Bass, Mitte Mitten, rechts Höhen (ohne Pi: alle = Musikpegel)
+      float v;
+      if (hatSpektrum(t)) {
+        float pos = n > 1 ? i / (n - 1) : 0.5f;
+        v = pos < 0.5f ? band_[0] + (band_[1] - band_[0]) * pos * 2 : band_[1] + (band_[2] - band_[1]) * (pos - 0.5f) * 2;
+        v = clamp01(v + schlag_ * 0.25f);
+      } else {
+        v = clamp01(musikNorm_ + beat_ * 0.3f);
+      }
+      return b + (a - b) * v;
+    }
+
+    case E_BEAT: {
+      // Schlag-Blitz: jede Zone ist bei etwa 2 von 3 Schlägen dabei (wechselndes Muster), Tempo = Abklingen
+      float h = hatSpektrum(t) ? schlag_ : beat_;
+      bool dabei = hashRausch(schlaege_, i, 77) > 0.33f || n == 1;
+      return b + (a - b) * (dabei ? h : h * 0.15f);
+    }
+
     case E_MUSIK: {
       // jede Zone bekommt die Hüllkurve leicht verzögert -> Welle über das Netz
       int verz = i * (1 + z.p.tempo / 20);
@@ -307,6 +343,16 @@ void Lichtmaschine::berechne(uint32_t t, float* ausgabe) {
     fxNorm_ *= expf(-dt * 8);
   }
   beat_ *= expf(-dt * 7.0f);
+  // Abklingen der Pi-Schläge: Tempo der ersten Beat-Zone bestimmt die Zeit (langsam ~0,5 s, schnell ~0,1 s)
+  float schlagTempo = 1;
+  for (int i = 0; i < n_; i++)
+    if (z_[i].p.effekt == E_BEAT) {
+      schlagTempo = tempoFaktor(z_[i].p.tempo);
+      break;
+    }
+  schlag_ *= expf(-dt * 6.0f * schlagTempo);
+  if (!hatSpektrum(t))
+    for (float& b : band_) b *= expf(-dt * 4);
 
   // Gewitter: gemeinsamer Einschlag über benachbarte Zonen
   uint32_t gewitterZonen = 0;

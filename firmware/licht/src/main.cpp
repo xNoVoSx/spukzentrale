@@ -6,6 +6,9 @@
 //  - Lautstärke-Hüllkurve vom Sound-ESP per UART empfangen (Licht reagiert auf Ton)
 //  - letzten Zustand im Flash merken -> läuft auch ohne Server weiter
 //  - Updates über WLAN (ArduinoOTA)
+//  - ab 1.3: hängt der ESP per USB am Raspberry Pi, läuft alles über das Kabel (USB-Modus): der Pi reicht die
+//    Server-Nachrichten als JSON-Zeilen durch und schickt Hüllkurve, Spektrum und Aktionen. Das WLAN ist dann aus.
+//    Schweigt der Pi 5 s lang, schaltet der ESP zurück auf WLAN (wie bis 1.2).
 //
 // Zwei Abläufe: die Render-Task (100 Hz, Kern 1) liest den UART, rechnet die Effekte und schreibt PWM – sie hängt
 // nie am Netz. loop() macht WLAN, WebSocket, OTA und Speichern; hängt das WLAN, läuft das Licht trotzdem weiter.
@@ -16,6 +19,7 @@
 #include <Preferences.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
+#include <esp_mac.h>
 
 #if __has_include("config.h")
 #include "config.h"
@@ -29,7 +33,7 @@
 #include "protokoll.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "1.2.1"
+#define FW_VERSION "1.3.0"
 #endif
 
 using namespace spuk;
@@ -48,6 +52,10 @@ static RahmenLeser uartLeser;
 static HardwareSerial& SoundUart = Serial2;
 
 static Diagnose diagnose;
+static RahmenLeser usbLeser;
+static QueueHandle_t usbZeilen = nullptr;     // JSON-Zeilen vom Pi (char*, mit malloc), Render-Task -> loop()
+static volatile uint32_t letzteUsbMs = 0;      // letztes gültiges Zeichen vom Pi
+static bool usbModus = false;
 static SemaphoreHandle_t maschineSperre = nullptr;  // schützt maschine und gammaWert
 static TaskHandle_t renderTask = nullptr;
 
@@ -144,41 +152,61 @@ static void ladeGespeichertenZustand() {
 // ---------------------------------------------------------------------------
 // Server-Nachrichten
 // ---------------------------------------------------------------------------
+// an den Server: im USB-Modus als JSON-Zeile an den Pi (in einem Stück, damit kein Log dazwischenrutscht)
+static void sende(JsonDocument& d) {
+  String s;
+  serializeJson(d, s);
+  if (usbModus) {
+    String zeile;
+    zeile.reserve(s.length() + 2);
+    zeile += (char)JSON_START;
+    zeile += s;
+    zeile += '\n';
+    Serial.write((const uint8_t*)zeile.c_str(), zeile.length());
+  } else {
+    ws.sendTXT(s);
+  }
+}
+
 static void sendeHallo() {
   JsonDocument d;
   d["t"] = "hallo";
   d["rolle"] = "licht";
   d["fw"] = FW_VERSION;
   d["zonen"] = ANZ_ZONEN;
-  d["mac"] = WiFi.macAddress();
-  d["ip"] = WiFi.localIP().toString();
+  // im USB-Modus ist das WLAN aus – dann liefert WiFi.macAddress() Nullen; die MAC steht aber im eFuse
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char macText[18];
+  snprintf(macText, sizeof(macText), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  d["mac"] = macText;
+  d["ip"] = usbModus ? String("USB") : WiFi.localIP().toString();
+  d["verbindung"] = usbModus ? "usb" : "wlan";
   JsonArray effekte = d["effekte"].to<JsonArray>();
   for (uint8_t e = 0; e < E_ANZAHL; e++) effekte.add(effektName(e));
   JsonArray aktionen = d["aktionen"].to<JsonArray>();
   for (uint8_t a = 1; a < A_ANZAHL; a++) aktionen.add(aktionName(a));
   diagnose.hallo(d);
-  String s;
-  serializeJson(d, s);
-  ws.sendTXT(s);
+  sende(d);
 }
 
 static void sendeStatus() {
   JsonDocument d;
   d["t"] = "status";
-  d["rssi"] = WiFi.RSSI();
+  d["verbindung"] = usbModus ? "usb" : "wlan";
+  if (!usbModus) d["rssi"] = WiFi.RSSI();
   d["uptime"] = millis() / 1000;
   d["heap"] = ESP.getFreeHeap();
   d["fps"] = (int)fps;
-  d["uart"] = (millis() - letzteUartMs) < 1500;
+  // „Kabel ok“: im USB-Modus die Leitung zum Pi, sonst der UART zum Sound-ESP
+  d["uart"] = usbModus ? (millis() - letzteUsbMs) < 1500 : (millis() - letzteUartMs) < 1500;
   d["sound_musik"] = (letzteFlags & FLAG_MUSIK_AKTIV) != 0;
   d["musik"] = (int)(musikNorm * 100);
   d["fx"] = (int)(fxNorm * 100);
   d["render_max_us"] = renderMaxUs;
   renderMaxUs = 0;
   diagnose.status(d);
-  String s;
-  serializeJson(d, s);
-  ws.sendTXT(s);
+  sende(d);
 }
 
 // Aktuelle Ausgabe (nach Master, vor Gamma) in Prozent – für die Live-Vorschau
@@ -187,9 +215,7 @@ static void sendeWerte() {
   d["t"] = "werte";
   JsonArray v = d["v"].to<JsonArray>();
   for (int i = 0; i < ANZ_ZONEN; i++) v.add((int)(letzteWerte[i] * 100 + 0.5f));
-  String s;
-  serializeJson(d, s);
-  ws.sendTXT(s);
+  sende(d);
 }
 
 static void verarbeite(uint8_t* payload, size_t len) {
@@ -225,6 +251,9 @@ static void verarbeite(uint8_t* payload, size_t len) {
   } else if (strcmp(t, "neustart") == 0) {
     delay(200);
     ESP.restart();
+  } else if (strcmp(t, "pi_hallo") == 0) {
+    // der Pi hat (neu) mit dem Server verbunden und will unser Hallo weiterreichen
+    sendeHallo();
   }
 }
 
@@ -272,6 +301,80 @@ static void leseUart() {
 }
 
 // ---------------------------------------------------------------------------
+// USB vom Pi (Render-Task, Sperre gehalten): Rahmen sofort auswerten, JSON-Zeilen an loop() weiterreichen
+// ---------------------------------------------------------------------------
+static void leseUsb() {
+  static char zeile[3072];
+  static size_t pos = 0;
+  static bool inJson = false;
+  static bool zuLang = false;
+  while (Serial.available()) {
+    uint8_t b = (uint8_t)Serial.read();
+    if (inJson) {
+      if (b == '\n') {
+        inJson = false;
+        if (zuLang || !pos) continue;
+        zeile[pos] = 0;
+        char* kopie = (char*)malloc(pos + 1);
+        if (!kopie) continue;
+        memcpy(kopie, zeile, pos + 1);
+        if (xQueueSend(usbZeilen, &kopie, 0) != pdTRUE) free(kopie);
+        letzteUsbMs = millis();
+      } else if (pos < sizeof(zeile) - 1) {
+        zeile[pos++] = (char)b;
+      } else {
+        zuLang = true;
+      }
+      continue;
+    }
+    if (b == JSON_START && usbLeser.leer()) {
+      inJson = true;
+      zuLang = false;
+      pos = 0;
+      continue;
+    }
+    if (!usbLeser.feed(b)) continue;
+    letzteUsbMs = millis();
+    if (usbLeser.typ == MSG_HUELLE && usbLeser.len == sizeof(Huelle)) {
+      Huelle h;
+      memcpy(&h, usbLeser.payload, sizeof(h));
+      letzteFlags = h.flags;
+      letzteUartMs = millis();
+      maschine.huelle(h.musik, h.fx, millis());
+    } else if (usbLeser.typ == MSG_AKTION && usbLeser.len == sizeof(LichtAktion)) {
+      LichtAktion a;
+      memcpy(&a, usbLeser.payload, sizeof(a));
+      uint32_t maske = a.maske & ((1u << ANZ_ZONEN) - 1);
+      maschine.aktion(a.typ, millis(), a.verzMs, a.dauerMs, maske, a.staerke, a.param);
+    } else if (usbLeser.typ == MSG_SPEKTRUM && usbLeser.len == sizeof(Spektrum)) {
+      Spektrum sp;
+      memcpy(&sp, usbLeser.payload, sizeof(sp));
+      maschine.spektrum(sp.bass, sp.mitte, sp.hoehen, sp.beat, millis());
+    }
+  }
+}
+
+// USB-Modus ein/aus: der Pi spricht mit uns -> WLAN aus; schweigt er 5 s -> zurück ins WLAN
+static void usbModusPruefen() {
+  bool piDa = letzteUsbMs && millis() - letzteUsbMs < 5000;
+  if (piDa && !usbModus) {
+    usbModus = true;
+    Serial.println(F("[licht] Pi per USB erkannt – USB-Modus, WLAN aus"));
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    wsVerbunden = false;
+    sendeHallo();
+  } else if (!piDa && usbModus) {
+    usbModus = false;
+    vorschau = false;
+    Serial.println(F("[licht] Pi schweigt – zurück ins WLAN"));
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    WiFi.begin(WLAN_SSID, WLAN_PASS);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // PWM-Ausgabe
 // ---------------------------------------------------------------------------
 static void schreibePwm(const float* werte, float gamma) {
@@ -300,6 +403,7 @@ static void renderSchleife(void*) {
     {
       Sperre s;
       leseUart();
+      leseUsb();
       maschine.berechne(millis(), werte);
       g = gammaWert;
       musikNorm = maschine.musikNorm();
@@ -329,7 +433,11 @@ static void renderSchleife(void*) {
 
 // ---------------------------------------------------------------------------
 void setup() {
-  Serial.begin(115200);
+  Serial.setRxBufferSize(4096);  // JSON-Zeilen vom Pi (bis ~3 KB) kommen schneller, als die Render-Task (10 ms) liest
+  // Sendepuffer: ohne ihn blockiert write(), bis eine lange Zeile bei 115200 Baud draußen ist (~20–35 ms), und die
+  // Render-Task wartet so lange beim Lesen auf dieselbe UART-Sperre -> Ruckler im Licht
+  Serial.setTxBufferSize(4096);
+  Serial.begin(USB_BAUD);
   delay(100);
   Serial.printf("\n[licht] Spukzentrale Licht-ESP v%s, %d Zonen\n", FW_VERSION, ANZ_ZONEN);
 
@@ -341,6 +449,7 @@ void setup() {
   SoundUart.begin(UART_BAUD, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
 
   maschineSperre = xSemaphoreCreateMutex();
+  usbZeilen = xQueueCreate(8, sizeof(char*));
   ladeGespeichertenZustand();
   Serial.printf("[licht] Start: %s\n", neustartGrund());
   xTaskCreatePinnedToCore(renderSchleife, "licht", 4096, nullptr, 5, &renderTask, 1);
@@ -375,7 +484,16 @@ void loop() {
   static bool otaBereit = false;
   diagnose.schleifeStart();
 
-  if (WiFi.status() == WL_CONNECTED) {
+  // JSON-Zeilen vom Pi = Server-Nachrichten
+  char* zeile;
+  while (xQueueReceive(usbZeilen, &zeile, 0) == pdTRUE) {
+    usbModusPruefen();
+    verarbeite((uint8_t*)zeile, strlen(zeile));
+    free(zeile);
+  }
+  usbModusPruefen();
+
+  if (!usbModus && WiFi.status() == WL_CONNECTED) {
     if (!otaBereit) {
       Serial.printf("[licht] WLAN ok, IP %s\n", WiFi.localIP().toString().c_str());
       otaBereit = true;
@@ -387,12 +505,13 @@ void loop() {
   }
 
   uint32_t jetzt = millis();
-  if (wsVerbunden && vorschau && (int32_t)(jetzt - naechsteWerte) >= 0) {
+  bool verbunden = usbModus || wsVerbunden;
+  if (verbunden && vorschau && (int32_t)(jetzt - naechsteWerte) >= 0) {
     naechsteWerte = jetzt + 100;  // 10 Hz reichen für die Vorschau
     sendeWerte();
   }
 
-  if (wsVerbunden && (int32_t)(jetzt - naechsterStatus) >= 0) {
+  if (verbunden && (int32_t)(jetzt - naechsterStatus) >= 0) {
     naechsterStatus = jetzt + 2000;
     sendeStatus();
   }

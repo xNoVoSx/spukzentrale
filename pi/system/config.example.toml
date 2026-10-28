@@ -1,0 +1,21 @@
+# spukpi – /etc/spukpi/config.toml
+# Nach Änderungen: sudo systemctl restart spukpi
+
+# Server (Docker-Container „spukzentrale“)
+server_host = "192.168.1.10"
+server_port = 8095
+
+# Rollen am Server. Solange noch der Sound-ESP im Einsatz ist: beide false lassen (der Pi liest dann nur das Log
+# des Licht-ESP mit, der bleibt im WLAN).
+sound = false          # true: der Pi spielt Ambiente + Effekte über den PCM5102A (Sound-ESP abziehen!)
+licht = false          # true: Licht-ESP läuft über USB (sein WLAN geht aus), Hüllkurve/Spektrum vom Pi
+
+# Audio-Ausgang (aplay -L zeigt alle). PCM5102A an I2S:
+audio_geraet = "plughw:CARD=sndrpihifiberry,DEV=0"
+# Klinke des Pi selbst (schlechtere Qualität): "plughw:CARD=Headphones,DEV=0"
+# Bluetooth-Box über bluez-alsa: "bluealsa:DEV=AA:BB:CC:DD:EE:FF,PROFILE=a2dp"
+
+usb_port = "/dev/ttyUSB0"
+puffer_s = 15          # Ambiente-Vorrat in Sekunden (WLAN-Aussetzer bis zu dieser Länge sind unhörbar)
+notbetrieb = true      # Server weg: Ambiente aus dem Mitschnitt + Zufallseffekte mit Licht
+analyse = true         # Spektrum + Beat für die Licht-Effekte „spektrum“ und „beat“

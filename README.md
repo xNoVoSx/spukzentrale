@@ -18,6 +18,16 @@ Handy ──► SERVER (Docker)  Weboberfläche, Szenen, Zufallsereignisse, Zeit
               Licht-Aktionen + Lautstärke-Hüllkurve, synchron zum Ton
 ```
 
+**Ab 1.3 mit Raspberry Pi** (empfohlen): Ein Pi 3 B+ ersetzt den Sound-ESP. Er hat viel besseres WLAN, 15 s
+Stream-Vorrat, einen lückenlosen Ersatz aus dem Mitschnitt und einen Notbetrieb ohne Server. Außerdem misst er
+die Latenz selbst, und es gibt Beat- und Spektrum-Licht. Der Licht-ESP hängt per USB am Pi, sein WLAN ist dann
+aus. Der Server bleibt gleich. → [`pi/README.md`](pi/README.md)
+
+```
+SERVER ──WLAN──► Raspberry Pi ──I2S──► PCM5102A ──AUX──► Box
+                      └──USB──► Licht-ESP ──PWM──► LED-Zonen
+```
+
 ## Inhalt
 
 - [Funktionen](#funktionen)
@@ -41,7 +51,8 @@ Handy ──► SERVER (Docker)  Weboberfläche, Szenen, Zufallsereignisse, Zeit
   Hexenauftritt, Kettensäge, Begrüßung – und eigene.
 - **Zufallsereignisse** nach Regeln (z. B. „Donner alle 1–4 Minuten“), mit Mindestabstand.
 - **Gruselstufen** 1 (Kinder) bis 3 (Schreck), auf Wunsch automatisch nach Uhrzeit.
-- **Stimmungen:** 14 Licht-Effekte pro Zone (Kerze, Feuer, Geist wandert, kaputte Röhre …),
+- **Stimmungen:** 16 Licht-Effekte pro Zone (Kerze, Feuer, Geist wandert, kaputte Röhre, mit dem Pi auch
+  Spektrum und Beat-Blitz …),
   als Favoriten speicherbar.
 - **Zeitplan** ab Sonnenuntergang oder Uhrzeit, **Ruhezeit** (leiser oder nur Licht).
 - **Auslöser:** Klingel gedrückt → Schrei mit Schreck-Licht, Person erkannt → Kettensäge –
@@ -283,13 +294,15 @@ python -m pytest -q
 bash ../firmware/licht/test/effekte_test.sh
 bash ../firmware/sound/test/adpcm_test.sh
 bash ../firmware/sound/test/chunked_test.sh
+cd ../pi && python -m pytest -q        # Pi-Dienst (numpy, pyserial, websockets)
 ```
 
 ### Aufbau
 
 | Pfad | Inhalt |
 |---|---|
-| `firmware/common/protokoll.h` | UART-Protokoll zwischen den ESPs (`A5 5A typ len payload xor`) |
+| `firmware/common/protokoll.h` | UART-/USB-Protokoll zum Licht-ESP (`A5 5A typ len payload xor`, JSON-Zeilen `1E {…} \n`) |
+| `pi/` | Raspberry Pi: Dienst `spukpi` (Sound, USB-Brücke, Notbetrieb, Analyse), Einrichtung, Tests |
 | `firmware/licht/` | Licht-ESP: Effekt-Engine (`effekte.cpp`), WLAN, WebSocket, PWM, OTA |
 | `firmware/sound/` | Sound-ESP: Audio-Pipeline (`audio.cpp`), ADPCM-Dekoder, HTTP-Chunk-Dekoder |
 | `server/app/` | FastAPI-Server: `zentrale.py` (Zustand), `ambiente.py` (Stream), `ablauf.py` (Szenen), `ereignisse.py`, `zeitplan.py`, `homeassistant.py`, `mqtt.py`, `licht.py` (Licht-Ausgang) |
@@ -310,6 +323,11 @@ Die ESPs verbinden sich mit `/ws/geraet?rolle=licht|sound&fw=<version>` und schi
 Hat ein Effekt ein `licht`-Feld, schickt der Sound-ESP die Aktion im selben Moment, in dem
 der Ton startet, per UART an den Licht-ESP (verzögert um die Ausgabe-Latenz). Ohne
 UART-Verbindung schickt der Server die Aktion selbst.
+
+Mit dem Pi (1.3): Der Pi meldet sich mit `plattform: "pi"` als „sound“. Den Stream holt er mit
+`/stream/ambiente?puffer_s=15`, dann läuft der Encoder entsprechend voraus. Für den Licht-ESP öffnet er die Rolle
+„licht“ und reicht die JSON-Nachrichten 1:1 über USB durch (`pi_hallo` fordert das Hallo des ESP an). Über
+dieselbe Leitung schickt er 100×/s Hüllkurve und Spektrum (`MSG_SPEKTRUM`: Bass, Mitte, Höhen, Beat).
 
 ## Lizenz
 

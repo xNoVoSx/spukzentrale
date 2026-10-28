@@ -3,6 +3,35 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.0] – 2026-10-28
+
+### Neu: Raspberry Pi statt Sound-ESP ([`pi/`](pi/README.md))
+- Dienst **spukpi** auf einem Pi 3 B+: meldet sich als „sound“ (Ton über PCM5102A an I2S) und als „licht“
+  (USB-Brücke zum Licht-ESP). Der Server bleibt kompatibel, beide Rollen sind einzeln schaltbar.
+- **15 s Stream-Vorrat** (der Server läuft für Zuhörer mit `puffer_s` entsprechend voraus) und **lückenloser
+  Ersatz**: Reißt der Stream ab, blendet der Pi auf einen Mitschnitt der letzten Minuten über und zurück, sobald der
+  Stream wieder genug Vorrat hat. Getestet: Server hart neu gestartet bzw. 2,5 min weg, 0 Aussetzer.
+- **Notbetrieb:** Ohne Server läuft das Ambiente aus dem Mitschnitt weiter, nach 60 s kommen Zufallseffekte mit dem
+  zuletzt eingestellten Licht.
+- **Latenz gemessen** (Füllstand des ALSA-Puffers): Ton und Licht sind ohne Einmessen synchron. `latenz_ms` ist beim
+  Pi nur noch das Extra, z. B. für Bluetooth.
+- **Musik-Analyse** (FFT, 50 Hz): Pegel in Bass, Mitte und Höhen sowie Beat-Erkennung, per USB an den Licht-ESP.
+- 8 Effekt-Stimmen, Effekte auf der SD-Karte. Pi-Gesundheit (Temperatur, Unterspannung, SD) in der Oberfläche.
+- Licht-ESP **über den Pi flashen** (`python -m spukpi.flash`).
+
+### Licht-Firmware 1.3.0
+- **USB-Modus:** Spricht der Pi über USB, schaltet der ESP sein WLAN ab und läuft komplett über das Kabel
+  (JSON-Zeilen + Rahmen). Schweigt der Pi 5 s lang, geht er zurück ins WLAN wie bisher.
+- Neue Effekte **„Spektrum“** (Zonen folgen Bass → Höhen) und **„Beat-Blitz“** (Blitz auf jeden Schlag, Tempo =
+  Abklingzeit). Ohne Pi folgen sie der normalen Hüllkurve.
+- MAC kommt aus dem eFuse (stimmt auch bei abgeschaltetem WLAN).
+
+### Server
+- `/stream/ambiente?puffer_s=N`: bis 20 s Rückblick, Encoder-Vorlauf folgt dem größten Wunsch. Der angezeigte Titel
+  wechselt erst, wenn er zu hören ist.
+- Oberfläche: Geräteanzeige für Pi und USB-Licht (Quelle, Vorrat, überbrückte Lücken, gemessene Latenz,
+  Temperatur, Unterspannung), Hinweis zur Latenz beim Pi.
+
 ## [1.2.3] – 2026-10-27 (nur Sound-Firmware)
 
 ### Behoben

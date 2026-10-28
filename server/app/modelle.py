@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 EFFEKTE = [
     "aus", "an", "flackern", "feuer", "atmen", "herzschlag", "strobo",
     "gewitter", "lauflicht", "wandern", "pingpong", "neon", "zufall", "musik",
+    "spektrum", "beat",   # ab 1.3: Analyse vom Pi (ohne Pi folgen sie der Hüllkurve)
 ]
 AKTIONEN = ["blitz", "env_blitz", "schreck", "blackout", "welle", "alle_an", "puls", "test", "flackern", "env_puls"]
 
@@ -29,7 +30,7 @@ UHRZEIT = r"^([01]\d|2[0-3]):[0-5]\d$"
 
 EffektName = Literal[
     "aus", "an", "flackern", "feuer", "atmen", "herzschlag", "strobo",
-    "gewitter", "lauflicht", "wandern", "pingpong", "neon", "zufall", "musik",
+    "gewitter", "lauflicht", "wandern", "pingpong", "neon", "zufall", "musik", "spektrum", "beat",
 ]
 AktionName = Literal[
     "keine", "blitz", "env_blitz", "schreck", "blackout", "welle", "alle_an", "puls", "test", "flackern", "env_puls",

@@ -95,7 +95,44 @@ int main() {
     PRUEFE(std::fabs(out[2] - ruhe) < 0.02f, "Aktion %s endet nicht (%f statt %f)", aktionName(a), out[2], ruhe);
   }
 
-  // 4. Namen hin und zurück
+  // 4. Spektrum vom Pi: Bass links, Höhen rechts; Beat blitzt auf den Schlag und klingt ab
+  {
+    Lichtmaschine m(5);
+    ZonenParam p;
+    p.effekt = E_SPEKTRUM;
+    p.staerke = 100;
+    p.basis = 0;
+    for (int i = 0; i < 5; i++) m.setzeZone(i, p);
+    m.global().hell = 100;
+    float out[MAX_ZONEN];
+    for (uint32_t t = 0; t < 2000; t += 10) {
+      m.spektrum(250, 60, 0, 0, t);
+      m.berechne(t, out);
+    }
+    PRUEFE(out[0] > 0.8f && out[4] < 0.1f && out[2] > 0.1f && out[2] < 0.5f,
+           "Spektrum: Bass links/Höhen rechts stimmt nicht (%f %f %f)", out[0], out[2], out[4]);
+
+    p.effekt = E_BEAT;
+    p.tempo = 50;
+    for (int i = 0; i < 5; i++) m.setzeZone(i, p);
+    for (uint32_t t = 2000; t < 3000; t += 10) {  // Überblendung abwarten, kein Schlag
+      m.spektrum(100, 100, 100, 0, t);
+      m.berechne(t, out);
+    }
+    PRUEFE(out[0] < 0.05f, "Beat: ohne Schlag nicht dunkel (%f)", out[0]);
+    m.spektrum(200, 100, 100, 255, 3000);
+    m.berechne(3000, out);
+    float spitze = 0;
+    for (int i = 0; i < 5; i++) spitze = out[i] > spitze ? out[i] : spitze;
+    PRUEFE(spitze > 0.8f, "Beat: kein Blitz auf den Schlag (%f)", spitze);
+    for (uint32_t t = 3010; t < 4000; t += 10) {
+      m.spektrum(100, 100, 100, 0, t);
+      m.berechne(t, out);
+    }
+    PRUEFE(out[0] < 0.05f && out[1] < 0.05f, "Beat: klingt nicht ab (%f)", out[0]);
+  }
+
+  // 5. Namen hin und zurück
   for (uint8_t e = 0; e < E_ANZAHL; e++) PRUEFE(effektVonName(effektName(e)) == e, "Effektname %d", e);
   for (uint8_t a = 0; a < A_ANZAHL; a++) PRUEFE(aktionVonName(aktionName(a)) == a, "Aktionsname %d", a);
 

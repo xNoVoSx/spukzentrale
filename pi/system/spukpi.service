@@ -1,0 +1,22 @@
+[Unit]
+Description=Spukzentrale auf dem Raspberry Pi (Sound + Licht-Brücke)
+Wants=network-online.target sound.target
+After=network-online.target sound.target
+
+[Service]
+Type=simple
+User=novos
+Group=audio
+SupplementaryGroups=dialout
+Environment=PYTHONPATH=/opt/spukpi/src
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/spukpi/venv/bin/python -m spukpi
+StateDirectory=spukpi
+# Ton im Takt halten: höhere Priorität, auch wenn das System beschäftigt ist
+Nice=-10
+IOSchedulingClass=realtime
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
