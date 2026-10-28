@@ -112,9 +112,10 @@ class HomeAssistant:
         while True:
             ha = self.z.einst.homeassistant
             beobachten = {a.id: a.entity_id for a in self.z.einst.ausloeser if a.aktiv and a.entity_id}
-            if not (ha.url and ha.token and beobachten):
+            if not (ha.url and ha.token):
                 self._status("aus")
                 return
+            # auch ohne aktiven Auslöser verbinden: zeigt sofort, ob Adresse und Token stimmen
             try:
                 await self._verbinden(ha.url, ha.token, beobachten)
                 warte = 5
@@ -140,8 +141,8 @@ class HomeAssistant:
                     "type": "subscribe_trigger",
                     "trigger": {"trigger": "state", "entity_id": entity_id, "to": "on"},
                 }))
-            self._status("verbunden")
-            log.info("Home Assistant verbunden, beobachte %s", ", ".join(beobachten.values()))
+            self._status("verbunden" if beobachten else "verbunden – kein Auslöser aktiv")
+            log.info("Home Assistant verbunden, beobachte %s", ", ".join(beobachten.values()) or "nichts")
             while True:
                 try:
                     roh = await asyncio.wait_for(ws.recv(), 60)

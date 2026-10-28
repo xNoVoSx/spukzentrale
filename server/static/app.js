@@ -136,8 +136,18 @@ function bereich(id, seiteName, themen, render, nachher) {
 }
 
 function beschaeftigt(el) {
+  // Formulare mit ungespeicherten Eingaben nie neu zeichnen – sonst wären die Eingaben weg und „Speichern“ schickte
+  // die alten Werte (passierte bei laufender Show: jede Zustandsänderung zeichnete die Einstellungen neu)
+  if (el.querySelector("form[data-geaendert]")) return true;
   const a = document.activeElement;
   return a && el.contains(a) && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName) && a.type !== "button";
+}
+document.addEventListener("input", (e) => {
+  const form = e.target.closest?.("form[data-teil]");
+  if (form && form.dataset.teil) form.dataset.geaendert = "1";
+}, true);
+function nachholen() {
+  for (const b of BEREICHE) if (b.veraltet && (b.seite === seite || b.seite === "*")) zeichne(b);
 }
 
 function zeichne(b) {
@@ -171,11 +181,7 @@ function zeigeSeite(name) {
 }
 
 // nach dem Bedienen eines Feldes nachholen, was inzwischen geändert wurde
-document.addEventListener("focusout", () => {
-  setTimeout(() => {
-    for (const b of BEREICHE) if (b.veraltet && (b.seite === seite || b.seite === "*")) zeichne(b);
-  }, 50);
-});
+document.addEventListener("focusout", () => setTimeout(nachholen, 50));
 
 // ---------------------------------------------------------------------------
 // Bausteine
@@ -747,7 +753,7 @@ bereich("einst-ausloeser", "einstellungen", ["daten", "zustand"], () => {
 bereich("einst-allgemein", "einstellungen", ["daten", "zustand"], () => {
   const e = S.einstellungen;
   const zp = e.zeitplan, rz = e.ruhezeit, gr = e.grusel, ha = e.homeassistant, mq = e.mqtt, so = e.standort;
-  const statusMarke = (t) => `<span class="marke ${t === "verbunden" ? "orange" : ""}">${esc(t)}</span>`;
+  const statusMarke = (t) => `<span class="marke ${String(t).startsWith("verbunden") ? "orange" : ""}">${esc(t)}</span>`;
   return [
     abschnitt("e-zeitplan", "⏰ Zeitplan", "zeitplan", `
       ${kasten("aktiv", "Zeitplan aktiv", zp.aktiv, "schaltet Licht, Ambiente und Ereignisse")}
@@ -1017,9 +1023,11 @@ document.addEventListener("submit", async (e) => {
   const form = e.target.closest("form[data-teil]");
   if (!form || !form.dataset.teil) return;
   e.preventDefault();
-  await api("PUT", `/api/einstellungen/${form.dataset.teil}`, formDaten(form));
+  await api("PUT", `/api/einstellungen/${form.dataset.teil}`, formDaten(form));   // wirft bei Fehler: bleibt markiert
+  delete form.dataset.geaendert;
   form.querySelector("button[type=submit]")?.blur();
   toast("Gespeichert");
+  nachholen();
 });
 
 document.addEventListener("toggle", (e) => {

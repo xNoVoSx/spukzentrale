@@ -81,6 +81,25 @@ async def test_ha_beobachtet_mehrere_sensoren_und_loest_aus():
         await verbindung.stoppen()
 
 
+async def test_ha_verbindet_auch_ohne_aktiven_ausloeser():
+    """Adresse + Token genügen: der Status zeigt sofort, ob die Zugangsdaten stimmen."""
+    ha = FakeHA()
+    async with websockets.serve(ha.handler, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        z = Zentrale()
+        z.einst.homeassistant.url = f"http://127.0.0.1:{port}"
+        z.einst.homeassistant.token = TOKEN
+        assert not any(a.aktiv for a in z.einst.ausloeser)
+        verbindung = HomeAssistant(z)
+        verbindung.neu_starten()
+        for _ in range(50):
+            await asyncio.sleep(0.05)
+            if z.ha_status != "aus":
+                break
+        assert z.ha_status == "verbunden – kein Auslöser aktiv" and ha.abos == {}
+        await verbindung.stoppen()
+
+
 async def test_ha_falsches_token_meldet_fehler():
     ha = FakeHA()
     async with websockets.serve(ha.handler, "127.0.0.1", 0) as server:

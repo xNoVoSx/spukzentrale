@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.7] – 2026-10-28
+
+- **Fehler behoben: Einstellungen gingen beim Speichern verloren**, wenn nebenher die Show lief. Jede
+  Zustandsänderung (und das Verlassen eines Feldes) zeichnete die Formulare neu – Eingaben weg, „Speichern“ schickte die
+  alten Werte und meldete trotzdem „Gespeichert“. Formulare mit ungespeicherten Änderungen werden jetzt nicht mehr neu
+  gezeichnet.
+- **Home Assistant** verbindet sich, sobald Adresse und Token eingetragen sind (Status „verbunden – kein Auslöser
+  aktiv“), nicht erst mit einem aktiven Auslöser. So sieht man sofort, ob die Zugangsdaten stimmen.
+
 ## [1.3.6] – 2026-10-28
 
 - Gesangserkennung (Analyse v3): „Choir“, „Chant“, „Vocal music“ zählen nicht mehr (feuerten auf Synth-/Streicherflächen
