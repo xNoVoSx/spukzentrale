@@ -543,6 +543,9 @@ bereich("sounds-ambiente", "sounds", ["medien", "zustand", "daten"], () => {
         <button class="klein" data-aktion="vorhoeren" data-url="/stream/ambiente">🎧 Stream im Browser</button>
       </div>
       <h3>Playlist</h3>
+      <p class="legende"><span><i style="background:#ff8a1f"></i>Gesang – keine Zufalls-Effekte (außer erlaubten)</span>
+        <span><i style="background:#3fbf6f"></i>ruhige Stelle – Effekte bevorzugt</span>
+        <span><i style="background:var(--text-leise)"></i>normale Musik</span><span><i style="background:#fff"></i>läuft gerade</span></p>
       <ul class="liste">${liste || '<li class="leer">Noch keine Musik.</li>'}</ul>
       <div class="schalter-zeile"><div>Zufällige Reihenfolge</div>${schalter("playlist-zufall", pl.zufall)}</div>
       ${regler("playlist-ueberblend", "Überblenden", pl.ueberblend_s, "", 0, 15, " s")}

@@ -21,19 +21,22 @@ from .modelle import Abschnitt, MusikAnalyse
 
 log = logging.getLogger(__name__)
 
-ANALYSE_VERSION = 2          # 2: Ein-/Ausblenden am Stückrand zählt nicht als ruhige Stelle
+ANALYSE_VERSION = 3          # 2: Ein-/Ausblenden ist keine ruhige Stelle; 3: kein Chor/Chant, min. 3 Treffer
 RATE = 16000                     # YAMNet erwartet 16 kHz mono
 YAM_FENSTER = 15600              # 0,975 s
 HOP_S = 0.5
 MODELL = Path(os.environ.get("SPUK_YAMNET", Path(__file__).resolve().parent.parent / "modelle" / "yamnet.tflite"))
 LABELS = MODELL.with_name("yamnet_labels.txt")
 
-STIMM_KLASSEN = ("Speech", "Singing", "Choir", "Male singing", "Female singing", "Child singing", "Vocal music",
-                 "Narration, monologue", "Chant", "A capella", "Humming", "Rapping", "Synthetic singing")
+# Ohne „Choir“, „Chant“, „Vocal music“: die feuern in Grusel-Hintergrundmusik auf Synth-/Streicherflächen (Novos'
+# Stücke: 617003 hatte 6 Fehl-Abschnitte), und ein Effekt über einer Chorfläche stört nicht.
+STIMM_KLASSEN = ("Speech", "Singing", "Male singing", "Female singing", "Child singing", "Narration, monologue",
+                 "Rapping", "Synthetic singing", "A capella", "Humming")
 STIMME_SCHWELLE = 0.08           # Summe der Stimmklassen (bei Musik im Mix liegen echte Stimmen bei 0,1–0,6)
 STIMME_LUECKE_S = 4.0            # Gesang mit kürzeren Pausen gilt als ein Abschnitt
 STIMME_RAND_S = 1.0              # Abschnitt um so viel vorn/hinten erweitern
 STIMME_MIN_S = 1.5
+STIMME_MIN_TREFFER = 3           # ein Abschnitt braucht mind. 3 Fenster mit Stimme (1,5 s) – einzelne Ausreißer weg
 RUHIG_DB = 6.0                   # so viel leiser als der Median
 RUHIG_MIN_S = 2.5
 RAND_S = 1.0                     # leise Stellen, die so nah am Anfang/Ende liegen, sind Ein-/Ausblenden (die Playlist
@@ -138,8 +141,9 @@ def mitte(st: np.ndarray, n: int = 1024) -> np.ndarray:
 
 
 def abschnitte(maske: np.ndarray, schritt_s: float, luecke_s: float, rand_s: float, min_s: float,
-               ende_s: float) -> list[Abschnitt]:
-    """Zusammenhängende True-Bereiche → (von, bis) in s; kurze Lücken schließen, Rand erweitern, Kurzes weg."""
+               ende_s: float, min_treffer: int = 1) -> list[Abschnitt]:
+    """Zusammenhängende True-Bereiche → (von, bis) in s; kurze Lücken schließen, Abschnitte mit weniger als
+    min_treffer True-Fenstern verwerfen, Rand erweitern, Kurzes weg."""
     roh: list[list[float]] = []
     for i, an in enumerate(maske):
         if not an:
@@ -147,10 +151,13 @@ def abschnitte(maske: np.ndarray, schritt_s: float, luecke_s: float, rand_s: flo
         t0, t1 = i * schritt_s, (i + 1) * schritt_s
         if roh and t0 - roh[-1][1] <= luecke_s:
             roh[-1][1] = t1
+            roh[-1][2] += 1
         else:
-            roh.append([t0, t1])
+            roh.append([t0, t1, 1])
     out: list[Abschnitt] = []
-    for a, b in roh:
+    for a, b, treffer in roh:
+        if treffer < min_treffer:
+            continue
         a, b = max(0.0, a - rand_s), min(ende_s, b + rand_s)
         if b - a < min_s:
             continue
@@ -222,7 +229,8 @@ def analysieren_pcm(st: np.ndarray) -> MusikAnalyse:
         idx = YAMNET.index(STIMM_KLASSEN)
         stimme = np.maximum(w_mono[:, idx].sum(axis=1), w_mitte[:, idx].sum(axis=1))
         a.modell = True
-        a.stimme = abschnitte(stimme > STIMME_SCHWELLE, HOP_S, STIMME_LUECKE_S, STIMME_RAND_S, STIMME_MIN_S, dauer)
+        a.stimme = abschnitte(stimme > STIMME_SCHWELLE, HOP_S, STIMME_LUECKE_S, STIMME_RAND_S, STIMME_MIN_S, dauer,
+                              STIMME_MIN_TREFFER)
         a.stimme_kurve = [int(np.clip(np.max(stimme[i:i + 2]) * 250, 0, 100)) for i in range(0, len(stimme), 2)]
         # Stimmung: Mittel der Stimmungsklassen; Dynamik hebt „dramatisch“
         summen = {s: 0.0 for s in GEWICHTE}

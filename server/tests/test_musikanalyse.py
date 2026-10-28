@@ -49,6 +49,7 @@ def test_abschnitte_schliessen_luecken_und_verwerfen_kurzes():
     m[30] = True       # 15,0–15,5 s einzeln
     assert ma.abschnitte(m, 0.5, 4.0, 0.0, 1.5, 20.0) == [(2.0, 7.0)]
     assert ma.abschnitte(m, 0.5, 4.0, 1.0, 1.5, 20.0) == [(1.0, 8.0), (14.0, 16.5)]
+    assert ma.abschnitte(m, 0.5, 4.0, 1.0, 1.5, 20.0, min_treffer=3) == [(1.0, 8.0)]   # Ausreißer bei 15 s weg
 
 
 def test_mitte_behaelt_center_und_entfernt_seiten():

@@ -3,6 +3,13 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.6] – 2026-10-28
+
+- Gesangserkennung (Analyse v3): „Choir“, „Chant“, „Vocal music“ zählen nicht mehr (feuerten auf Synth-/Streicherflächen
+  in Grusel-Hintergrundmusik), ein Gesangsabschnitt braucht mindestens 3 Fenster (1,5 s) Stimme. An Novos' 15 Stücken:
+  vorher Fehl-Abschnitte in 9 Instrumentalstücken, jetzt nur noch Gesang in „This Is Halloween“ (116 s statt 122 s).
+- Legende über der Playlist (Gesang / ruhige Stelle / normale Musik / läuft gerade).
+
 ## [1.3.5] – 2026-10-28
 
 - **Fortschritt des Ambiente-Stücks:** Show → Jetzt mit Balken und „1:12 / 3:13“, in der Playlist ein Abspielkopf auf

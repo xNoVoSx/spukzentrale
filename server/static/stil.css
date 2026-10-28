@@ -294,3 +294,5 @@ code { font-size: 13px; background: var(--bg); padding: 1px 5px; border-radius: 
 .zl { position: relative; }
 .zl .abspielkopf { position: absolute; top: 2px; bottom: -2px; width: 2px; margin-left: -1px; background: #fff; border-radius: 1px;
   box-shadow: 0 0 4px rgba(255, 255, 255, .8); transition: left .25s linear; }
+.legende { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; font-size: 12px; color: var(--text-leise); }
+.legende i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
