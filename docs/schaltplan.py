@@ -64,10 +64,8 @@ def klemme(x, y, name):
 
 
 n = len(ZONEN_PINS)
-H = Y0 + n * ZEILE + 520
-teile.append(f'<rect width="{W}" height="{H}" fill="white"/>')
 text(W / 2, 40, TITEL, 26, anker="middle", fett=True)
-text(W / 2, 64, "Licht: 5 Zonen über LR7843-MOSFET-Module · Sound: I2S-DAC an AUX · beide ESP32 per USB versorgt", 14, GRAU, anker="middle")
+text(W / 2, 64, "Licht: 5 Zonen über LR7843-MOSFET-Module · Sound: Raspberry Pi mit I2S-DAC an AUX · Licht-ESP per USB am Pi", 14, GRAU, anker="middle")
 
 # --- Netzteil und Sicherung -------------------------------------------------
 NT_X, NT_Y = 640, 84
@@ -86,7 +84,7 @@ text(BUS_M + 8, y_bus_start + 20, "− (Masse)", 12, SCHWARZ, fett=True)
 # --- ESP#1 (Licht) ------------------------------------------------------------
 esp1_y, esp1_h = Y0 - 30, n * ZEILE + 40
 kasten(ESP_X, esp1_y, ESP_W, esp1_h, "ESP#1 LICHT", "#e8f1fd", BLAU, "ESP32-WROOM-32")
-text(ESP_X + ESP_W / 2, esp1_y + 62, "Strom: USB-Netzteil", 12, GRAU, anker="middle", kursiv=True)
+text(ESP_X + ESP_W / 2, esp1_y + 62, "Strom + Daten: USB vom Pi", 12, GRAU, anker="middle", kursiv=True)
 gnd_y = esp1_y + esp1_h - 46
 pin(ESP_X + ESP_W, gnd_y, "GND")
 linie([(ESP_X + ESP_W, gnd_y), (GND_SCHIENE, gnd_y), (GND_SCHIENE, Y0 + 75)], BLAU)
@@ -139,61 +137,114 @@ for i, gpio in enumerate(ZONEN_PINS):
     punkt(zx + 10, y + 25, ROT)
     punkt(zx + 24, y + 55, "#555")
 
-# --- ESP#2 (Sound), DAC, Box --------------------------------------------------
-esp2_y = esp1_y + esp1_h + 90
-esp2_h = 190
-kasten(ESP_X, esp2_y, ESP_W, esp2_h, "", "#efe8fd", LILA)
-text(ESP_X + ESP_W / 2, esp2_y + 50, "ESP#2 SOUND", 16, anker="middle", fett=True)
-text(ESP_X + ESP_W / 2, esp2_y + 68, "ESP32-WROOM-32", 12, GRAU, anker="middle")
-text(ESP_X + ESP_W / 2, esp2_y + esp2_h - 14, "Strom: USB-Netzteil", 12, GRAU, anker="middle", kursiv=True)
-# --- UART zwischen den ESPs ---------------------------------------------------
-for x_pin, oben, unten, farbe in ((90, "TX 17", "RX 16", ORANGE), (150, "RX 16", "TX 17", ORANGE), (210, "GND", "GND", BLAU)):
-    teile.append(f'<circle cx="{x_pin}" cy="{esp1_y + esp1_h}" r="5" fill="white" stroke="#444" stroke-width="1.6"/>')
-    teile.append(f'<circle cx="{x_pin}" cy="{esp2_y}" r="5" fill="white" stroke="#444" stroke-width="1.6"/>')
-    text(x_pin, esp1_y + esp1_h - 10, oben, 11, anker="middle", fett=True)
-    text(x_pin, esp2_y + 22, unten, 11, anker="middle", fett=True)
-    linie([(x_pin, esp1_y + esp1_h + 5), (x_pin, esp2_y - 5)], farbe)
-text(270, esp1_y + esp1_h + 50, "UART 115200 Baud: TX ↔ RX gekreuzt, GND gemeinsam (wichtig!)", 13, ORANGE, fett=True)
+# --- Raspberry Pi, DAC, Box -----------------------------------------------------
+PI_ROT = "#c51a4a"
+pi_y = esp1_y + esp1_h + 90
+pi_h = 260
+kasten(ESP_X, pi_y, ESP_W, pi_h, "", "#fde8ee", PI_ROT)
+text(ESP_X + ESP_W / 2, pi_y + 50, "RASPBERRY PI 3 B+", 16, anker="middle", fett=True)
+text(ESP_X + ESP_W / 2, pi_y + 68, "Dienst spukpi", 12, GRAU, anker="middle")
+text(ESP_X + ESP_W / 2, pi_y + pi_h - 30, "Strom: Micro-USB-Netzteil", 12, GRAU, anker="middle", kursiv=True)
+text(ESP_X + ESP_W / 2, pi_y + pi_h - 14, "5,1 V / 2,5 A, kurzes dickes Kabel", 12, GRAU, anker="middle", kursiv=True)
+# USB Pi <-> Licht-ESP
+ux = ESP_X + 70
+teile.append(f'<rect x="{ux - 9}" y="{esp1_y + esp1_h - 4}" width="18" height="10" rx="2" fill="#999"/>')
+teile.append(f'<rect x="{ux - 11}" y="{pi_y - 6}" width="22" height="12" rx="2" fill="#999"/>')
+linie([(ux, esp1_y + esp1_h + 6), (ux, pi_y - 6)], GRAU, 5)
+text(ux + 16, esp1_y + esp1_h + 40, "USB-Kabel (Datenkabel, kein reines Ladekabel!)", 13, GRAU, fett=True)
+text(ux + 16, esp1_y + esp1_h + 58, "Strom und Steuerung für den Licht-ESP – sein WLAN ist dann aus", 12, GRAU)
 
 DAC_X, DAC_W = MOD_X, MOD_W
-kasten(DAC_X, esp2_y, DAC_W, esp2_h, "PCM5102A", "#efe8fd", LILA, "I2S-DAC")
-dac_pins = [("3V3", "VIN", ROT), ("GND", "GND", BLAU), ("GPIO26", "BCK", LILA), ("GPIO25", "LCK", LILA), ("GPIO22", "DIN", LILA)]
-for k, (esp_pin, dac_pin, farbe) in enumerate(dac_pins):
-    py = esp2_y + 82 + k * 20
-    pin(ESP_X + ESP_W, py, esp_pin)
+kasten(DAC_X, pi_y, DAC_W, pi_h, "PCM5102A", "#efe8fd", LILA, "I2S-DAC")
+dac_pins = [("Pin 2 · 5 V", "VIN", ROT), ("Pin 39 · GND", "GND", BLAU), ("Pin 12 · GPIO18", "BCK", LILA),
+            ("Pin 35 · GPIO19", "LCK", LILA), ("Pin 40 · GPIO21", "DIN", LILA)]
+for k, (pi_pin, dac_pin, farbe) in enumerate(dac_pins):
+    py = pi_y + 92 + k * 22
+    pin(ESP_X + ESP_W, py, pi_pin)
     pin(DAC_X, py, dac_pin, rechts=False)
     linie([(ESP_X + ESP_W + 5, py), (DAC_X - 5, py)], farbe, 2)
-py = esp2_y + 82 + len(dac_pins) * 20
+py = pi_y + 92 + len(dac_pins) * 22
 pin(DAC_X, py, "SCK", rechts=False)
-linie([(DAC_X - 5, py), (DAC_X - 40, py), (DAC_X - 40, esp2_y + 102)], BLAU, 1.6)
-punkt(DAC_X - 40, esp2_y + 102, BLAU)
-text(DAC_X - 46, py + 4, "SCK an GND", 11, BLAU, anker="end")
+linie([(DAC_X - 5, py), (DAC_X - 40, py), (DAC_X - 40, pi_y + 114)], BLAU, 1.6)
+punkt(DAC_X - 40, pi_y + 114, BLAU)
+text(DAC_X - 46, py + 4, "SCK → GND", 11, BLAU, anker="end")
 # Klinke -> Box
-kl_y = esp2_y + 95
+kl_y = pi_y + 105
 teile.append(f'<rect x="{DAC_X + DAC_W - 8}" y="{kl_y - 12}" width="24" height="24" rx="12" fill="#333"/>')
 text(DAC_X + DAC_W + 24, kl_y - 18, "3,5 mm Klinke", 12, GRAU)
 linie([(DAC_X + DAC_W + 16, kl_y), (BUS_M + 140, kl_y)], SCHWARZ, 4)
 kasten(BUS_M + 140, kl_y - 50, 220, 100, "Lautsprecher-Box", "#f4f1f7", "#444", "AUX-Eingang")
 
+# --- GPIO-Leiste so, wie der Pi im Kasten liegt -----------------------------------
+gy = pi_y + pi_h + 70
+text(ESP_X, gy, "GPIO-Leiste im Kasten – Blick auf den Pi (Lüfter zu dir, Micro-USB unten links, USB/LAN rechts)", 16, fett=True)
+gy += 18
+BRETT_X, BRETT_W, BRETT_H = ESP_X, W - 2 * ESP_X, 330
+teile.append(f'<rect x="{BRETT_X}" y="{gy}" width="{BRETT_W}" height="{BRETT_H}" rx="14" fill="#2f7d4a" stroke="#1d4d2e" stroke-width="2"/>')
+text(BRETT_X + 14, gy + 24, "Raspberry Pi 3 B+ (Platine von vorne)", 13, "#d8f0de", fett=True)
+text(BRETT_X + 14, gy + 280, "◄ SD-Karte (links)", 13, "#d8f0de", fett=True)
+text(BRETT_X + BRETT_W - 14, gy + 280, "USB / LAN (rechts) ►", 13, "#d8f0de", anker="end", fett=True)
+text(BRETT_X + 70, gy + BRETT_H - 14, "▼ Micro-USB (Strom)", 13, "#d8f0de", fett=True)
+text(BRETT_X + BRETT_W / 2, gy + BRETT_H - 14, "▼ HDMI · Klinke (unbenutzt)", 13, "#d8f0de", anker="middle")
+belegt = {2: ("VIN", ROT), 39: ("GND", BLAU), 12: ("BCK", LILA), 35: ("LCK", LILA), 40: ("DIN", LILA)}
+TEIL = 52
+lx = BRETT_X + (BRETT_W - 19 * TEIL) / 2
+leiste_y = gy + 110
+teile.append(f'<rect x="{lx - 24}" y="{leiste_y - 24}" width="{19 * TEIL + 48}" height="{TEIL + 48}" rx="6" fill="#1a1a1a"/>')
+text(BRETT_X + BRETT_W / 2, gy + 24, "▲ Platinenrand (oben)", 13, "#d8f0de", anker="middle", fett=True)
+for spalte in range(20):
+    x = lx + spalte * TEIL
+    for nr, y in ((2 * spalte + 2, leiste_y), (2 * spalte + 1, leiste_y + TEIL)):
+        name, farbe = belegt.get(nr, (None, None))
+        eckig = nr == 1
+        f = farbe or "#c9a227"
+        if eckig:
+            teile.append(f'<rect x="{x - 13}" y="{y - 13}" width="26" height="26" rx="2" fill="{f}" stroke="white" stroke-width="2"/>')
+        else:
+            teile.append(f'<circle cx="{x}" cy="{y}" r="{15 if farbe else 11}" fill="{f}" stroke="{"white" if farbe else "#7a6214"}" stroke-width="{2.5 if farbe else 1}"/>')
+        text(x, y + 4, str(nr), 11 if not farbe else 12, "white" if farbe else "#222", anker="middle", fett=bool(farbe))
+        if farbe:
+            oben = nr % 2 == 0
+            ty = y - 34 if oben else y + 44
+            teile.append(f'<rect x="{x - 26}" y="{ty - 15}" width="52" height="22" rx="5" fill="{farbe}"/>')
+            text(x, ty + 1, name, 13, "white", anker="middle", fett=True)
+text(lx - 30, leiste_y + 4, "außen", 12, "#d8f0de", anker="end", fett=True)
+text(lx - 30, leiste_y + TEIL + 4, "innen", 12, "#d8f0de", anker="end", fett=True)
+text(lx, leiste_y + TEIL + 70, "Pin 1 = eckiges Lötpad (Unterseite), innere Reihe ganz links", 12, "#d8f0de")
+text(lx + 19 * TEIL, leiste_y + TEIL + 70, "GND, LCK, DIN: alle drei ganz rechts", 12, "#d8f0de", anker="end")
+gy += BRETT_H + 40
+# DAC-Stiftreihe wie auf der Platine (Vorderseite, Klinke oben rechts)
+text(ESP_X, gy, "PCM5102A – untere Lötreihe von vorne (Klinke oben rechts): SCK · BCK · DIN · LCK · GND · VIN", 14, fett=True)
+dac_reihe = [("SCK", BLAU, "→ Lötbrücke (GND)"), ("BCK", LILA, "Pi Pin 12"), ("DIN", LILA, "Pi Pin 40"),
+             ("LCK", LILA, "Pi Pin 35"), ("GND", BLAU, "Pi Pin 39"), ("VIN", ROT, "Pi Pin 2")]
+for k, (n_, farbe, ziel) in enumerate(dac_reihe):
+    x = ESP_X + 60 + k * 200
+    teile.append(f'<circle cx="{x}" cy="{gy + 34}" r="13" fill="{farbe}" stroke="white" stroke-width="2"/>')
+    text(x + 22, gy + 30, n_, 14, farbe, fett=True)
+    text(x + 22, gy + 48, ziel, 12, GRAU)
+esp2_y, esp2_h = gy - 30 - 190, 190     # für die Hinweise darunter
+
 # --- Hinweise und Legende ------------------------------------------------------
-hy = esp2_y + esp2_h + 50
+hy = gy + 100
 hinweise = [
-    "PCM5102A-Lötbrücken auf der Rückseite: FLT, DEMP, FMT auf L – XSMT auf H (sonst stumm).",
+    "PCM5102A: Rückseite FLT, DEMP, FMT = L, XSMT = H (ab Werk meist schon so). Stumm? XSMT-Pin gegen GND messen: 3,3 V.",
+    "5 V (Pin 2) und GND (Pin 39) nie vertauschen. Kabel Pi → DAC: Dupont-Buchse auf die Stiftleiste, am DAC anlöten.",
     "MOSFET-Modul: Netzteil + an „+“, Netzteil − an „−“, LED + an „+“, LED − an „LOAD“ (Modul schaltet die Minusseite).",
     "ESP-GND an GND jedes Moduls. Bei Modulen ohne Optokoppler ist GND intern mit „−“ verbunden – das ist so gewollt.",
     "Leitungen: 0,75 mm² reichen bei 2 m LED pro Zone (≈ 1,7 A). Den Montageplan mit Längen berechnet die Weboberfläche.",
-    "Pins meiden: GPIO 0, 2, 12, 15 (Boot) und 34–39 (nur Eingang). Eine 6. Zone ginge z. B. an GPIO 25 des Licht-ESP.",
+    "Licht-ESP – Pins meiden: GPIO 0, 2, 12, 15 (Boot) und 34–39 (nur Eingang). Eine 6. Zone ginge z. B. an GPIO 25.",
 ]
 text(ESP_X, hy, "Hinweise", 16, fett=True)
 for k, h in enumerate(hinweise):
     text(ESP_X, hy + 26 + k * 22, "• " + h, 13)
 ly = hy + 26 + len(hinweise) * 22 + 20
 for k, (farbe, name) in enumerate(((ROT, "+12 V"), (SCHWARZ, "Masse 12 V"), ("#555", "LED − (geschaltet)"), (GRUEN, "PWM"),
-                                   (BLAU, "GND Steuerung"), (ORANGE, "UART"), (LILA, "I2S"))):
+                                   (BLAU, "GND Steuerung"), (GRAU, "USB"), (LILA, "I2S"))):
     x = ESP_X + k * 180
     linie([(x, ly), (x + 34, ly)], farbe, 4)
     text(x + 42, ly + 5, name, 12)
 
+teile.insert(0, f'<rect width="{W}" height="{ly + 30}" fill="white"/>')
 svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {ly + 30}" width="{W}" height="{ly + 30}" '
        f'font-family="DejaVu Sans, Arial, sans-serif">\n' + "\n".join(teile) + "\n</svg>\n")
 ziel = Path(__file__).with_name("schaltplan.svg")

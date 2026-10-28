@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 1466" width="1360" height="1466" font-family="DejaVu Sans, Arial, sans-serif">
-<rect width="1360" height="1460" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 2066" width="1360" height="2066" font-family="DejaVu Sans, Arial, sans-serif">
+<rect width="1360" height="2066" fill="white"/>
 <text x="680.0" y="40" font-size="26" fill="#222222" text-anchor="middle" font-weight="700">Spukzentrale – Verdrahtung</text>
-<text x="680.0" y="64" font-size="14" fill="#777777" text-anchor="middle">Licht: 5 Zonen über LR7843-MOSFET-Module · Sound: I2S-DAC an AUX · beide ESP32 per USB versorgt</text>
+<text x="680.0" y="64" font-size="14" fill="#777777" text-anchor="middle">Licht: 5 Zonen über LR7843-MOSFET-Module · Sound: Raspberry Pi mit I2S-DAC an AUX · Licht-ESP per USB am Pi</text>
 <rect x="640" y="84" width="180" height="62" rx="10" fill="#f4f1f7" stroke="#444" stroke-width="2"/>
 <text x="730.0" y="108" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">Netzteil 12 V</text>
 <text x="730.0" y="126" font-size="12" fill="#777777" text-anchor="middle">200 W</text>
@@ -16,7 +16,7 @@
 <rect x="40" y="160" width="220" height="790" rx="10" fill="#e8f1fd" stroke="#1f6fd1" stroke-width="2"/>
 <text x="150.0" y="184" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">ESP#1 LICHT</text>
 <text x="150.0" y="202" font-size="12" fill="#777777" text-anchor="middle">ESP32-WROOM-32</text>
-<text x="150.0" y="222" font-size="12" fill="#777777" text-anchor="middle" font-style="italic">Strom: USB-Netzteil</text>
+<text x="150.0" y="222" font-size="12" fill="#777777" text-anchor="middle" font-style="italic">Strom + Daten: USB vom Pi</text>
 <circle cx="260" cy="904" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
 <text x="250" y="909" font-size="12" fill="#222222" text-anchor="end">GND</text>
 <polyline points="260,904 340,904 340,265" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
@@ -251,84 +251,197 @@
 <text x="1092" y="888" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">−</text>
 <circle cx="1050" cy="815" r="4.2" fill="#d62828"/>
 <circle cx="1064" cy="845" r="4.2" fill="#555"/>
-<rect x="40" y="1040" width="220" height="190" rx="10" fill="#efe8fd" stroke="#7b3fe4" stroke-width="2"/>
+<rect x="40" y="1040" width="220" height="260" rx="10" fill="#fde8ee" stroke="#c51a4a" stroke-width="2"/>
 <text x="150.0" y="1064" font-size="16" fill="#222222" text-anchor="middle" font-weight="700"></text>
-<text x="150.0" y="1090" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">ESP#2 SOUND</text>
-<text x="150.0" y="1108" font-size="12" fill="#777777" text-anchor="middle">ESP32-WROOM-32</text>
-<text x="150.0" y="1216" font-size="12" fill="#777777" text-anchor="middle" font-style="italic">Strom: USB-Netzteil</text>
-<circle cx="90" cy="950" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<circle cx="90" cy="1040" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="90" y="940" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">TX 17</text>
-<text x="90" y="1062" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">RX 16</text>
-<polyline points="90,955 90,1035" fill="none" stroke="#e07a00" stroke-width="2.4" stroke-linejoin="round"/>
-<circle cx="150" cy="950" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<circle cx="150" cy="1040" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="150" y="940" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">RX 16</text>
-<text x="150" y="1062" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">TX 17</text>
-<polyline points="150,955 150,1035" fill="none" stroke="#e07a00" stroke-width="2.4" stroke-linejoin="round"/>
-<circle cx="210" cy="950" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<circle cx="210" cy="1040" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="210" y="940" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">GND</text>
-<text x="210" y="1062" font-size="11" fill="#222222" text-anchor="middle" font-weight="700">GND</text>
-<polyline points="210,955 210,1035" fill="none" stroke="#1f6fd1" stroke-width="2.4" stroke-linejoin="round"/>
-<text x="270" y="1000" font-size="13" fill="#e07a00" text-anchor="start" font-weight="700">UART 115200 Baud: TX ↔ RX gekreuzt, GND gemeinsam (wichtig!)</text>
-<rect x="470" y="1040" width="190" height="190" rx="10" fill="#efe8fd" stroke="#7b3fe4" stroke-width="2"/>
+<text x="150.0" y="1090" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">RASPBERRY PI 3 B+</text>
+<text x="150.0" y="1108" font-size="12" fill="#777777" text-anchor="middle">Dienst spukpi</text>
+<text x="150.0" y="1270" font-size="12" fill="#777777" text-anchor="middle" font-style="italic">Strom: Micro-USB-Netzteil</text>
+<text x="150.0" y="1286" font-size="12" fill="#777777" text-anchor="middle" font-style="italic">5,1 V / 2,5 A, kurzes dickes Kabel</text>
+<rect x="101" y="946" width="18" height="10" rx="2" fill="#999"/>
+<rect x="99" y="1034" width="22" height="12" rx="2" fill="#999"/>
+<polyline points="110,956 110,1034" fill="none" stroke="#777777" stroke-width="5" stroke-linejoin="round"/>
+<text x="126" y="990" font-size="13" fill="#777777" text-anchor="start" font-weight="700">USB-Kabel (Datenkabel, kein reines Ladekabel!)</text>
+<text x="126" y="1008" font-size="12" fill="#777777" text-anchor="start">Strom und Steuerung für den Licht-ESP – sein WLAN ist dann aus</text>
+<rect x="470" y="1040" width="190" height="260" rx="10" fill="#efe8fd" stroke="#7b3fe4" stroke-width="2"/>
 <text x="565.0" y="1064" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">PCM5102A</text>
 <text x="565.0" y="1082" font-size="12" fill="#777777" text-anchor="middle">I2S-DAC</text>
-<circle cx="260" cy="1122" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="250" y="1127" font-size="12" fill="#222222" text-anchor="end">3V3</text>
-<circle cx="470" cy="1122" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="480" y="1127" font-size="12" fill="#222222" text-anchor="start">VIN</text>
-<polyline points="265,1122 465,1122" fill="none" stroke="#d62828" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="260" cy="1142" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="250" y="1147" font-size="12" fill="#222222" text-anchor="end">GND</text>
-<circle cx="470" cy="1142" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="480" y="1147" font-size="12" fill="#222222" text-anchor="start">GND</text>
-<polyline points="265,1142 465,1142" fill="none" stroke="#1f6fd1" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="260" cy="1162" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="250" y="1167" font-size="12" fill="#222222" text-anchor="end">GPIO26</text>
-<circle cx="470" cy="1162" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="480" y="1167" font-size="12" fill="#222222" text-anchor="start">BCK</text>
-<polyline points="265,1162 465,1162" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="260" cy="1182" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="250" y="1187" font-size="12" fill="#222222" text-anchor="end">GPIO25</text>
-<circle cx="470" cy="1182" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="480" y="1187" font-size="12" fill="#222222" text-anchor="start">LCK</text>
-<polyline points="265,1182 465,1182" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="260" cy="1202" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="250" y="1207" font-size="12" fill="#222222" text-anchor="end">GPIO22</text>
-<circle cx="470" cy="1202" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="480" y="1207" font-size="12" fill="#222222" text-anchor="start">DIN</text>
-<polyline points="265,1202 465,1202" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="470" cy="1222" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
-<text x="480" y="1227" font-size="12" fill="#222222" text-anchor="start">SCK</text>
-<polyline points="465,1222 430,1222 430,1142" fill="none" stroke="#1f6fd1" stroke-width="1.6" stroke-linejoin="round"/>
-<circle cx="430" cy="1142" r="4.2" fill="#1f6fd1"/>
-<text x="424" y="1226" font-size="11" fill="#1f6fd1" text-anchor="end">SCK an GND</text>
-<rect x="652" y="1123" width="24" height="24" rx="12" fill="#333"/>
-<text x="684" y="1117" font-size="12" fill="#777777" text-anchor="start">3,5 mm Klinke</text>
-<polyline points="676,1135 910,1135" fill="none" stroke="#222222" stroke-width="4" stroke-linejoin="round"/>
-<rect x="910" y="1085" width="220" height="100" rx="10" fill="#f4f1f7" stroke="#444" stroke-width="2"/>
-<text x="1020.0" y="1109" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">Lautsprecher-Box</text>
-<text x="1020.0" y="1127" font-size="12" fill="#777777" text-anchor="middle">AUX-Eingang</text>
-<text x="40" y="1280" font-size="16" fill="#222222" text-anchor="start" font-weight="700">Hinweise</text>
-<text x="40" y="1306" font-size="13" fill="#222222" text-anchor="start">• PCM5102A-Lötbrücken auf der Rückseite: FLT, DEMP, FMT auf L – XSMT auf H (sonst stumm).</text>
-<text x="40" y="1328" font-size="13" fill="#222222" text-anchor="start">• MOSFET-Modul: Netzteil + an „+“, Netzteil − an „−“, LED + an „+“, LED − an „LOAD“ (Modul schaltet die Minusseite).</text>
-<text x="40" y="1350" font-size="13" fill="#222222" text-anchor="start">• ESP-GND an GND jedes Moduls. Bei Modulen ohne Optokoppler ist GND intern mit „−“ verbunden – das ist so gewollt.</text>
-<text x="40" y="1372" font-size="13" fill="#222222" text-anchor="start">• Leitungen: 0,75 mm² reichen bei 2 m LED pro Zone (≈ 1,7 A). Den Montageplan mit Längen berechnet die Weboberfläche.</text>
-<text x="40" y="1394" font-size="13" fill="#222222" text-anchor="start">• Pins meiden: GPIO 0, 2, 12, 15 (Boot) und 34–39 (nur Eingang). Eine 6. Zone ginge z. B. an GPIO 25 des Licht-ESP.</text>
-<polyline points="40,1436 74,1436" fill="none" stroke="#d62828" stroke-width="4" stroke-linejoin="round"/>
-<text x="82" y="1441" font-size="12" fill="#222222" text-anchor="start">+12 V</text>
-<polyline points="220,1436 254,1436" fill="none" stroke="#222222" stroke-width="4" stroke-linejoin="round"/>
-<text x="262" y="1441" font-size="12" fill="#222222" text-anchor="start">Masse 12 V</text>
-<polyline points="400,1436 434,1436" fill="none" stroke="#555" stroke-width="4" stroke-linejoin="round"/>
-<text x="442" y="1441" font-size="12" fill="#222222" text-anchor="start">LED − (geschaltet)</text>
-<polyline points="580,1436 614,1436" fill="none" stroke="#2a9d3a" stroke-width="4" stroke-linejoin="round"/>
-<text x="622" y="1441" font-size="12" fill="#222222" text-anchor="start">PWM</text>
-<polyline points="760,1436 794,1436" fill="none" stroke="#1f6fd1" stroke-width="4" stroke-linejoin="round"/>
-<text x="802" y="1441" font-size="12" fill="#222222" text-anchor="start">GND Steuerung</text>
-<polyline points="940,1436 974,1436" fill="none" stroke="#e07a00" stroke-width="4" stroke-linejoin="round"/>
-<text x="982" y="1441" font-size="12" fill="#222222" text-anchor="start">UART</text>
-<polyline points="1120,1436 1154,1436" fill="none" stroke="#7b3fe4" stroke-width="4" stroke-linejoin="round"/>
-<text x="1162" y="1441" font-size="12" fill="#222222" text-anchor="start">I2S</text>
+<circle cx="260" cy="1132" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1137" font-size="12" fill="#222222" text-anchor="end">Pin 2 · 5 V</text>
+<circle cx="470" cy="1132" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1137" font-size="12" fill="#222222" text-anchor="start">VIN</text>
+<polyline points="265,1132 465,1132" fill="none" stroke="#d62828" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="260" cy="1154" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1159" font-size="12" fill="#222222" text-anchor="end">Pin 39 · GND</text>
+<circle cx="470" cy="1154" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1159" font-size="12" fill="#222222" text-anchor="start">GND</text>
+<polyline points="265,1154 465,1154" fill="none" stroke="#1f6fd1" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="260" cy="1176" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1181" font-size="12" fill="#222222" text-anchor="end">Pin 12 · GPIO18</text>
+<circle cx="470" cy="1176" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1181" font-size="12" fill="#222222" text-anchor="start">BCK</text>
+<polyline points="265,1176 465,1176" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="260" cy="1198" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1203" font-size="12" fill="#222222" text-anchor="end">Pin 35 · GPIO19</text>
+<circle cx="470" cy="1198" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1203" font-size="12" fill="#222222" text-anchor="start">LCK</text>
+<polyline points="265,1198 465,1198" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="260" cy="1220" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="250" y="1225" font-size="12" fill="#222222" text-anchor="end">Pin 40 · GPIO21</text>
+<circle cx="470" cy="1220" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1225" font-size="12" fill="#222222" text-anchor="start">DIN</text>
+<polyline points="265,1220 465,1220" fill="none" stroke="#7b3fe4" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="470" cy="1242" r="5" fill="white" stroke="#444" stroke-width="1.6"/>
+<text x="480" y="1247" font-size="12" fill="#222222" text-anchor="start">SCK</text>
+<polyline points="465,1242 430,1242 430,1154" fill="none" stroke="#1f6fd1" stroke-width="1.6" stroke-linejoin="round"/>
+<circle cx="430" cy="1154" r="4.2" fill="#1f6fd1"/>
+<text x="424" y="1246" font-size="11" fill="#1f6fd1" text-anchor="end">SCK → GND</text>
+<rect x="652" y="1133" width="24" height="24" rx="12" fill="#333"/>
+<text x="684" y="1127" font-size="12" fill="#777777" text-anchor="start">3,5 mm Klinke</text>
+<polyline points="676,1145 910,1145" fill="none" stroke="#222222" stroke-width="4" stroke-linejoin="round"/>
+<rect x="910" y="1095" width="220" height="100" rx="10" fill="#f4f1f7" stroke="#444" stroke-width="2"/>
+<text x="1020.0" y="1119" font-size="16" fill="#222222" text-anchor="middle" font-weight="700">Lautsprecher-Box</text>
+<text x="1020.0" y="1137" font-size="12" fill="#777777" text-anchor="middle">AUX-Eingang</text>
+<text x="40" y="1370" font-size="16" fill="#222222" text-anchor="start" font-weight="700">GPIO-Leiste im Kasten – Blick auf den Pi (Lüfter zu dir, Micro-USB unten links, USB/LAN rechts)</text>
+<rect x="40" y="1388" width="1280" height="330" rx="14" fill="#2f7d4a" stroke="#1d4d2e" stroke-width="2"/>
+<text x="54" y="1412" font-size="13" fill="#d8f0de" text-anchor="start" font-weight="700">Raspberry Pi 3 B+ (Platine von vorne)</text>
+<text x="54" y="1668" font-size="13" fill="#d8f0de" text-anchor="start" font-weight="700">◄ SD-Karte (links)</text>
+<text x="1306" y="1668" font-size="13" fill="#d8f0de" text-anchor="end" font-weight="700">USB / LAN (rechts) ►</text>
+<text x="110" y="1704" font-size="13" fill="#d8f0de" text-anchor="start" font-weight="700">▼ Micro-USB (Strom)</text>
+<text x="680.0" y="1704" font-size="13" fill="#d8f0de" text-anchor="middle">▼ HDMI · Klinke (unbenutzt)</text>
+<rect x="162.0" y="1474" width="1036" height="100" rx="6" fill="#1a1a1a"/>
+<text x="680.0" y="1412" font-size="13" fill="#d8f0de" text-anchor="middle" font-weight="700">▲ Platinenrand (oben)</text>
+<circle cx="186.0" cy="1498" r="15" fill="#d62828" stroke="white" stroke-width="2.5"/>
+<text x="186.0" y="1502" font-size="12" fill="white" text-anchor="middle" font-weight="700">2</text>
+<rect x="160.0" y="1449" width="52" height="22" rx="5" fill="#d62828"/>
+<text x="186.0" y="1465" font-size="13" fill="white" text-anchor="middle" font-weight="700">VIN</text>
+<rect x="173.0" y="1537" width="26" height="26" rx="2" fill="#c9a227" stroke="white" stroke-width="2"/>
+<text x="186.0" y="1554" font-size="11" fill="#222" text-anchor="middle">1</text>
+<circle cx="238.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="238.0" y="1502" font-size="11" fill="#222" text-anchor="middle">4</text>
+<circle cx="238.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="238.0" y="1554" font-size="11" fill="#222" text-anchor="middle">3</text>
+<circle cx="290.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="290.0" y="1502" font-size="11" fill="#222" text-anchor="middle">6</text>
+<circle cx="290.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="290.0" y="1554" font-size="11" fill="#222" text-anchor="middle">5</text>
+<circle cx="342.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="342.0" y="1502" font-size="11" fill="#222" text-anchor="middle">8</text>
+<circle cx="342.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="342.0" y="1554" font-size="11" fill="#222" text-anchor="middle">7</text>
+<circle cx="394.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="394.0" y="1502" font-size="11" fill="#222" text-anchor="middle">10</text>
+<circle cx="394.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="394.0" y="1554" font-size="11" fill="#222" text-anchor="middle">9</text>
+<circle cx="446.0" cy="1498" r="15" fill="#7b3fe4" stroke="white" stroke-width="2.5"/>
+<text x="446.0" y="1502" font-size="12" fill="white" text-anchor="middle" font-weight="700">12</text>
+<rect x="420.0" y="1449" width="52" height="22" rx="5" fill="#7b3fe4"/>
+<text x="446.0" y="1465" font-size="13" fill="white" text-anchor="middle" font-weight="700">BCK</text>
+<circle cx="446.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="446.0" y="1554" font-size="11" fill="#222" text-anchor="middle">11</text>
+<circle cx="498.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="498.0" y="1502" font-size="11" fill="#222" text-anchor="middle">14</text>
+<circle cx="498.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="498.0" y="1554" font-size="11" fill="#222" text-anchor="middle">13</text>
+<circle cx="550.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="550.0" y="1502" font-size="11" fill="#222" text-anchor="middle">16</text>
+<circle cx="550.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="550.0" y="1554" font-size="11" fill="#222" text-anchor="middle">15</text>
+<circle cx="602.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="602.0" y="1502" font-size="11" fill="#222" text-anchor="middle">18</text>
+<circle cx="602.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="602.0" y="1554" font-size="11" fill="#222" text-anchor="middle">17</text>
+<circle cx="654.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="654.0" y="1502" font-size="11" fill="#222" text-anchor="middle">20</text>
+<circle cx="654.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="654.0" y="1554" font-size="11" fill="#222" text-anchor="middle">19</text>
+<circle cx="706.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="706.0" y="1502" font-size="11" fill="#222" text-anchor="middle">22</text>
+<circle cx="706.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="706.0" y="1554" font-size="11" fill="#222" text-anchor="middle">21</text>
+<circle cx="758.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="758.0" y="1502" font-size="11" fill="#222" text-anchor="middle">24</text>
+<circle cx="758.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="758.0" y="1554" font-size="11" fill="#222" text-anchor="middle">23</text>
+<circle cx="810.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="810.0" y="1502" font-size="11" fill="#222" text-anchor="middle">26</text>
+<circle cx="810.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="810.0" y="1554" font-size="11" fill="#222" text-anchor="middle">25</text>
+<circle cx="862.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="862.0" y="1502" font-size="11" fill="#222" text-anchor="middle">28</text>
+<circle cx="862.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="862.0" y="1554" font-size="11" fill="#222" text-anchor="middle">27</text>
+<circle cx="914.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="914.0" y="1502" font-size="11" fill="#222" text-anchor="middle">30</text>
+<circle cx="914.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="914.0" y="1554" font-size="11" fill="#222" text-anchor="middle">29</text>
+<circle cx="966.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="966.0" y="1502" font-size="11" fill="#222" text-anchor="middle">32</text>
+<circle cx="966.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="966.0" y="1554" font-size="11" fill="#222" text-anchor="middle">31</text>
+<circle cx="1018.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="1018.0" y="1502" font-size="11" fill="#222" text-anchor="middle">34</text>
+<circle cx="1018.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="1018.0" y="1554" font-size="11" fill="#222" text-anchor="middle">33</text>
+<circle cx="1070.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="1070.0" y="1502" font-size="11" fill="#222" text-anchor="middle">36</text>
+<circle cx="1070.0" cy="1550" r="15" fill="#7b3fe4" stroke="white" stroke-width="2.5"/>
+<text x="1070.0" y="1554" font-size="12" fill="white" text-anchor="middle" font-weight="700">35</text>
+<rect x="1044.0" y="1579" width="52" height="22" rx="5" fill="#7b3fe4"/>
+<text x="1070.0" y="1595" font-size="13" fill="white" text-anchor="middle" font-weight="700">LCK</text>
+<circle cx="1122.0" cy="1498" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="1122.0" y="1502" font-size="11" fill="#222" text-anchor="middle">38</text>
+<circle cx="1122.0" cy="1550" r="11" fill="#c9a227" stroke="#7a6214" stroke-width="1"/>
+<text x="1122.0" y="1554" font-size="11" fill="#222" text-anchor="middle">37</text>
+<circle cx="1174.0" cy="1498" r="15" fill="#7b3fe4" stroke="white" stroke-width="2.5"/>
+<text x="1174.0" y="1502" font-size="12" fill="white" text-anchor="middle" font-weight="700">40</text>
+<rect x="1148.0" y="1449" width="52" height="22" rx="5" fill="#7b3fe4"/>
+<text x="1174.0" y="1465" font-size="13" fill="white" text-anchor="middle" font-weight="700">DIN</text>
+<circle cx="1174.0" cy="1550" r="15" fill="#1f6fd1" stroke="white" stroke-width="2.5"/>
+<text x="1174.0" y="1554" font-size="12" fill="white" text-anchor="middle" font-weight="700">39</text>
+<rect x="1148.0" y="1579" width="52" height="22" rx="5" fill="#1f6fd1"/>
+<text x="1174.0" y="1595" font-size="13" fill="white" text-anchor="middle" font-weight="700">GND</text>
+<text x="156.0" y="1502" font-size="12" fill="#d8f0de" text-anchor="end" font-weight="700">außen</text>
+<text x="156.0" y="1554" font-size="12" fill="#d8f0de" text-anchor="end" font-weight="700">innen</text>
+<text x="186.0" y="1620" font-size="12" fill="#d8f0de" text-anchor="start">Pin 1 = eckiges Lötpad (Unterseite), innere Reihe ganz links</text>
+<text x="1174.0" y="1620" font-size="12" fill="#d8f0de" text-anchor="end">GND, LCK, DIN: alle drei ganz rechts</text>
+<text x="40" y="1758" font-size="14" fill="#222222" text-anchor="start" font-weight="700">PCM5102A – untere Lötreihe von vorne (Klinke oben rechts): SCK · BCK · DIN · LCK · GND · VIN</text>
+<circle cx="100" cy="1792" r="13" fill="#1f6fd1" stroke="white" stroke-width="2"/>
+<text x="122" y="1788" font-size="14" fill="#1f6fd1" text-anchor="start" font-weight="700">SCK</text>
+<text x="122" y="1806" font-size="12" fill="#777777" text-anchor="start">→ Lötbrücke (GND)</text>
+<circle cx="300" cy="1792" r="13" fill="#7b3fe4" stroke="white" stroke-width="2"/>
+<text x="322" y="1788" font-size="14" fill="#7b3fe4" text-anchor="start" font-weight="700">BCK</text>
+<text x="322" y="1806" font-size="12" fill="#777777" text-anchor="start">Pi Pin 12</text>
+<circle cx="500" cy="1792" r="13" fill="#7b3fe4" stroke="white" stroke-width="2"/>
+<text x="522" y="1788" font-size="14" fill="#7b3fe4" text-anchor="start" font-weight="700">DIN</text>
+<text x="522" y="1806" font-size="12" fill="#777777" text-anchor="start">Pi Pin 40</text>
+<circle cx="700" cy="1792" r="13" fill="#7b3fe4" stroke="white" stroke-width="2"/>
+<text x="722" y="1788" font-size="14" fill="#7b3fe4" text-anchor="start" font-weight="700">LCK</text>
+<text x="722" y="1806" font-size="12" fill="#777777" text-anchor="start">Pi Pin 35</text>
+<circle cx="900" cy="1792" r="13" fill="#1f6fd1" stroke="white" stroke-width="2"/>
+<text x="922" y="1788" font-size="14" fill="#1f6fd1" text-anchor="start" font-weight="700">GND</text>
+<text x="922" y="1806" font-size="12" fill="#777777" text-anchor="start">Pi Pin 39</text>
+<circle cx="1100" cy="1792" r="13" fill="#d62828" stroke="white" stroke-width="2"/>
+<text x="1122" y="1788" font-size="14" fill="#d62828" text-anchor="start" font-weight="700">VIN</text>
+<text x="1122" y="1806" font-size="12" fill="#777777" text-anchor="start">Pi Pin 2</text>
+<text x="40" y="1858" font-size="16" fill="#222222" text-anchor="start" font-weight="700">Hinweise</text>
+<text x="40" y="1884" font-size="13" fill="#222222" text-anchor="start">• PCM5102A: Rückseite FLT, DEMP, FMT = L, XSMT = H (ab Werk meist schon so). Stumm? XSMT-Pin gegen GND messen: 3,3 V.</text>
+<text x="40" y="1906" font-size="13" fill="#222222" text-anchor="start">• 5 V (Pin 2) und GND (Pin 39) nie vertauschen. Kabel Pi → DAC: Dupont-Buchse auf die Stiftleiste, am DAC anlöten.</text>
+<text x="40" y="1928" font-size="13" fill="#222222" text-anchor="start">• MOSFET-Modul: Netzteil + an „+“, Netzteil − an „−“, LED + an „+“, LED − an „LOAD“ (Modul schaltet die Minusseite).</text>
+<text x="40" y="1950" font-size="13" fill="#222222" text-anchor="start">• ESP-GND an GND jedes Moduls. Bei Modulen ohne Optokoppler ist GND intern mit „−“ verbunden – das ist so gewollt.</text>
+<text x="40" y="1972" font-size="13" fill="#222222" text-anchor="start">• Leitungen: 0,75 mm² reichen bei 2 m LED pro Zone (≈ 1,7 A). Den Montageplan mit Längen berechnet die Weboberfläche.</text>
+<text x="40" y="1994" font-size="13" fill="#222222" text-anchor="start">• Licht-ESP – Pins meiden: GPIO 0, 2, 12, 15 (Boot) und 34–39 (nur Eingang). Eine 6. Zone ginge z. B. an GPIO 25.</text>
+<polyline points="40,2036 74,2036" fill="none" stroke="#d62828" stroke-width="4" stroke-linejoin="round"/>
+<text x="82" y="2041" font-size="12" fill="#222222" text-anchor="start">+12 V</text>
+<polyline points="220,2036 254,2036" fill="none" stroke="#222222" stroke-width="4" stroke-linejoin="round"/>
+<text x="262" y="2041" font-size="12" fill="#222222" text-anchor="start">Masse 12 V</text>
+<polyline points="400,2036 434,2036" fill="none" stroke="#555" stroke-width="4" stroke-linejoin="round"/>
+<text x="442" y="2041" font-size="12" fill="#222222" text-anchor="start">LED − (geschaltet)</text>
+<polyline points="580,2036 614,2036" fill="none" stroke="#2a9d3a" stroke-width="4" stroke-linejoin="round"/>
+<text x="622" y="2041" font-size="12" fill="#222222" text-anchor="start">PWM</text>
+<polyline points="760,2036 794,2036" fill="none" stroke="#1f6fd1" stroke-width="4" stroke-linejoin="round"/>
+<text x="802" y="2041" font-size="12" fill="#222222" text-anchor="start">GND Steuerung</text>
+<polyline points="940,2036 974,2036" fill="none" stroke="#777777" stroke-width="4" stroke-linejoin="round"/>
+<text x="982" y="2041" font-size="12" fill="#222222" text-anchor="start">USB</text>
+<polyline points="1120,2036 1154,2036" fill="none" stroke="#7b3fe4" stroke-width="4" stroke-linejoin="round"/>
+<text x="1162" y="2041" font-size="12" fill="#222222" text-anchor="start">I2S</text>
 </svg>

@@ -25,10 +25,13 @@ Server ──WLAN──► Pi ──I2S──► PCM5102A ──AUX──► Box
 
 ## Verdrahtung PCM5102A → Pi
 
+Gesamtplan mit der GPIO-Leiste so, wie der Pi im Kasten liegt: [`docs/schaltplan.svg`](../docs/schaltplan.svg).
+GND geht am kürzesten an **Pin 39** (direkt neben 35 und 40); Pin 6 ist gleichwertig.
+
 | PCM5102A | Pi 3 B+ (Stiftleiste) |
 |---|---|
 | VIN | Pin 2 (5 V) |
-| GND | Pin 6 (GND) |
+| GND | Pin 39 (GND) – oder Pin 6 |
 | BCK | Pin 12 (GPIO 18) |
 | LCK | Pin 35 (GPIO 19) |
 | DIN | Pin 40 (GPIO 21) |
