@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.1] – 2026-10-28
+
+- **Licht-Effekt „Musik“ mit Pi neu:** Grundglühen aus der Energie aller Bänder (je Zone leicht verschieden), jeder
+  erkannte Schlag läuft als **Welle von der Mitte nach außen** über das Netz, Höhen lassen einzelne Zonen funkeln.
+  Tempo = Laufzeit/Abklingen der Welle. Ohne Pi bleibt das bisherige Verhalten.
+- **Live-Vorschau flüssig:** Licht-ESP schickt über USB 25 statt 10 Werte/s, die Oberfläche blendet mit der Bildrate
+  weich nach. Die USB-Brücke im Pi reicht Daten sofort weiter (vorher in 0,2-s-Päckchen).
+- Verdrahtungsplan (`docs/schaltplan.svg`) für den Pi-Aufbau.
+
 ## [1.3.0] – 2026-10-28
 
 ### Neu: Raspberry Pi statt Sound-ESP ([`pi/`](pi/README.md))

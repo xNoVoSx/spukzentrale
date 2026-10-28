@@ -31,6 +31,13 @@ inline float hashRausch(uint32_t a, uint32_t b, uint32_t c) {
   return (mische(a * 0x9E3779B1U ^ mische(b + 0x85EBCA6BU) ^ (c * 0xC2B2AE35U)) & 0xFFFFFF) /
          16777215.0f;
 }
+// Weiches Rauschen: zwischen den Rasterpunkten (alle periodeMs) mit Smoothstep übergeblendet
+inline float sanftRausch(uint32_t seed, uint32_t t, uint32_t periodeMs) {
+  uint32_t k = t / periodeMs;
+  float f = (float)(t - k * periodeMs) / periodeMs;
+  f = f * f * (3 - 2 * f);
+  return hashRausch(seed, k, 3) * (1 - f) + hashRausch(seed, k + 1, 3) * f;
+}
 }  // namespace
 
 const char* effektName(uint8_t e) { return e < E_ANZAHL ? EFFEKT_NAMEN[e] : "flackern"; }
@@ -135,6 +142,8 @@ void Lichtmaschine::spektrum(uint8_t bass, uint8_t mitte, uint8_t hoehen, uint8_
     float st = 0.45f + 0.55f * (beat / 255.0f);
     if (st > schlag_) schlag_ = st;
     schlaege_++;
+    wellen_[wellePos_] = {jetztMs, st};
+    wellePos_ = (wellePos_ + 1) % MAX_WELLEN;
   }
 }
 
@@ -321,7 +330,28 @@ float Lichtmaschine::basisWert(int i, ZonenZustand& z, uint32_t t, float dt) {
     }
 
     case E_MUSIK: {
-      // jede Zone bekommt die Hüllkurve leicht verzögert -> Welle über das Netz
+      if (hatSpektrum(t)) {
+        // Mit Pi: Grundglühen aus der Gesamtenergie (je Zone leicht verschieden), Schläge laufen als Welle von der
+        // Mitte nach außen, Höhen lassen einzelne Zonen funkeln. Tempo = Laufzeit und Abklingen der Welle.
+        float pos = n > 1 ? i / (n - 1) : 0.5f;
+        float abstand = fabsf(pos - 0.5f) * 2.0f;                    // 0 Mitte .. 1 Rand
+        float laufMs = 140.0f / s, abklingMs = 260.0f / s;
+        float welle = 0;
+        for (const Welle& w : wellen_) {
+          if (w.staerke <= 0) continue;
+          float seit = (float)(int32_t)(t - w.start) - abstand * laufMs;
+          if (seit < 0 || seit > abklingMs * 6) continue;
+          float anstieg = seit < 25.0f ? seit / 25.0f : 1.0f;        // 25 ms weich an, sonst knallt es nur
+          float v = w.staerke * anstieg * expf(-seit / abklingMs);
+          if (v > welle) welle = v;
+        }
+        float grund = powf(energie_, 1.4f) * (0.7f + 0.3f * sanftRausch(i * 131 + 17, t, 900));
+        float r = sanftRausch(i * 977 + 5, t, 90);
+        float funkeln = band_[2] * band_[2] * clamp01((r - 0.6f) / 0.4f) * 0.8f;
+        float v = clamp01(grund * 0.8f + welle * 0.85f + funkeln);
+        return b + (a - b) * v;
+      }
+      // ohne Pi: jede Zone bekommt die Hüllkurve leicht verzögert -> Welle über das Netz
       int verz = i * (1 + z.p.tempo / 20);
       if (verz >= HUELLE_HISTORIE) verz = HUELLE_HISTORIE - 1;
       int idx = (histPos_ - 1 - verz + HUELLE_HISTORIE * 2) % HUELLE_HISTORIE;
@@ -353,6 +383,10 @@ void Lichtmaschine::berechne(uint32_t t, float* ausgabe) {
   schlag_ *= expf(-dt * 6.0f * schlagTempo);
   if (!hatSpektrum(t))
     for (float& b : band_) b *= expf(-dt * 4);
+  {
+    float e = 0.45f * band_[0] + 0.35f * band_[1] + 0.2f * band_[2];
+    energie_ += (e - energie_) * (1.0f - expf(-dt * 5.0f));     // ~0,2 s: ruhiges Glühen, kein Zappeln
+  }
 
   // Gewitter: gemeinsamer Einschlag über benachbarte Zonen
   uint32_t gewitterZonen = 0;

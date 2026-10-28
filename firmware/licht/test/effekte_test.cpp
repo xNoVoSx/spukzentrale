@@ -132,6 +132,41 @@ int main() {
     PRUEFE(out[0] < 0.05f && out[1] < 0.05f, "Beat: klingt nicht ab (%f)", out[0]);
   }
 
+  // 4b. Musik mit Pi: ein Schlag läuft als Welle von der Mitte nach außen und klingt ab
+  {
+    Lichtmaschine m(5);
+    ZonenParam p;
+    p.effekt = E_MUSIK;
+    p.staerke = 100;
+    p.basis = 0;
+    p.tempo = 50;
+    for (int i = 0; i < 5; i++) m.setzeZone(i, p);
+    m.global().hell = 100;
+    float out[MAX_ZONEN];
+    for (uint32_t t = 0; t < 2000; t += 10) {  // leise, ohne Schlag
+      m.spektrum(40, 40, 0, 0, t);
+      m.berechne(t, out);
+    }
+    float ruhe = out[2];
+    PRUEFE(ruhe < 0.3f, "Musik: leise Musik zu hell (%f)", ruhe);
+    m.spektrum(40, 40, 0, 255, 2000);
+    float mitte_max = 0, rand_max = 0;
+    uint32_t mitte_t = 0, rand_t = 0;
+    for (uint32_t t = 2000; t < 2600; t += 10) {
+      if (t > 2000) m.spektrum(40, 40, 0, 0, t);
+      m.berechne(t, out);
+      if (out[2] > mitte_max) mitte_max = out[2], mitte_t = t;
+      if (out[0] > rand_max) rand_max = out[0], rand_t = t;
+    }
+    PRUEFE(mitte_max > 0.75f && rand_max > 0.6f, "Musik: Schlag-Welle zu schwach (%f %f)", mitte_max, rand_max);
+    PRUEFE(rand_t > mitte_t + 80, "Musik: Welle läuft nicht von der Mitte nach außen (%u / %u ms)", mitte_t, rand_t);
+    for (uint32_t t = 2600; t < 4500; t += 10) {
+      m.spektrum(40, 40, 0, 0, t);
+      m.berechne(t, out);
+    }
+    PRUEFE(out[2] < ruhe + 0.05f && out[0] < ruhe + 0.05f, "Musik: Welle klingt nicht ab (%f %f)", out[2], out[0]);
+  }
+
   // 5. Namen hin und zurück
   for (uint8_t e = 0; e < E_ANZAHL; e++) PRUEFE(effektVonName(effektName(e)) == e, "Effektname %d", e);
   for (uint8_t a = 0; a < A_ANZAHL; a++) PRUEFE(aktionVonName(aktionName(a)) == a, "Aktionsname %d", a);

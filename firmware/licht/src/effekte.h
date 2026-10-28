@@ -28,7 +28,7 @@ enum Effekt : uint8_t {
   E_PINGPONG,
   E_NEON,
   E_ZUFALL,
-  E_MUSIK,
+  E_MUSIK,      // mit Pi: Grundglühen + Schlag-Welle von der Mitte nach außen + Funkeln in den Höhen
   E_SPEKTRUM,   // Zonen folgen den Bändern (links Bass, rechts Höhen) – Analyse vom Pi
   E_BEAT,       // Blitz auf jeden Schlag, klingt ab (Tempo = Abklingzeit)
   E_ANZAHL
@@ -145,6 +145,15 @@ class Lichtmaschine {
   float schlag_ = 0;          // Hüllkurve der Schläge (springt auf die Schlagstärke, klingt ab)
   uint32_t schlaege_ = 0;     // Zähler (wechselndes Muster bei E_BEAT)
   uint32_t letztesSpektrum_ = 0;
+  // E_MUSIK mit Pi: Schläge laufen als Welle von der Mitte nach außen, mehrere dürfen sich überlagern
+  struct Welle {
+    uint32_t start = 0;
+    float staerke = 0;
+  };
+  static constexpr int MAX_WELLEN = 4;
+  Welle wellen_[MAX_WELLEN];
+  int wellePos_ = 0;
+  float energie_ = 0;         // geglättete Gesamtenergie der Bänder (Grundglühen)
   bool hatSpektrum(uint32_t t) const { return letztesSpektrum_ && t - letztesSpektrum_ < 500; }
 };
 

@@ -507,7 +507,7 @@ void loop() {
   uint32_t jetzt = millis();
   bool verbunden = usbModus || wsVerbunden;
   if (verbunden && vorschau && (int32_t)(jetzt - naechsteWerte) >= 0) {
-    naechsteWerte = jetzt + 100;  // 10 Hz reichen für die Vorschau
+    naechsteWerte = jetzt + (usbModus ? 40 : 100);  // Vorschau: über USB 25 Hz (flüssig), im WLAN 10 Hz
     sendeWerte();
   }
 

@@ -287,14 +287,35 @@ bereich("show-vorschau", "show", ["daten"], () => {
     </div>`;
 }, () => vorschauZeichnen());
 
+// Die Werte kommen mit 10–25 Hz; die Anzeige läuft mit der Bildrate und blendet weich nach (schnell hoch, etwas
+// langsamer runter – wie eine echte LED, die man mit den Augen verfolgt), statt von Wert zu Wert zu springen.
+const anzeige = [];
+let animiert = false;
 function vorschauZeichnen() {
   const offline = !S?.geraete?.licht?.verbunden || Date.now() - letzteWerte > 3000;
   const hinweis = $("#vorschau-offline");
   if (hinweis) hinweis.hidden = !offline;
-  for (const g of $$(".vz")) {
-    const v = offline ? 0 : (werte[+g.dataset.zone] ?? 0) / 100;
-    g.setAttribute("opacity", Math.pow(v, 0.6).toFixed(3)); // Auge sieht nicht linear
+  if (!animiert) {
+    animiert = true;
+    requestAnimationFrame(vorschauAnimieren);
   }
+}
+let letzterFrame = 0;
+function vorschauAnimieren(jetzt) {
+  const dt = Math.min(0.1, (jetzt - (letzterFrame || jetzt)) / 1000);
+  letzterFrame = jetzt;
+  const offline = !S?.geraete?.licht?.verbunden || Date.now() - letzteWerte > 3000;
+  const gruppen = $$(".vz");
+  for (const g of gruppen) {
+    const z = +g.dataset.zone;
+    const ziel = offline ? 0 : (werte[z] ?? 0) / 100;
+    const ist = anzeige[z] ?? 0;
+    const k = 1 - Math.exp(-dt * (ziel > ist ? 40 : 12));
+    anzeige[z] = ist + (ziel - ist) * k;
+    g.setAttribute("opacity", Math.pow(anzeige[z], 0.6).toFixed(3)); // Auge sieht nicht linear
+  }
+  if (gruppen.length && !document.hidden) requestAnimationFrame(vorschauAnimieren);
+  else animiert = false;
 }
 setInterval(vorschauZeichnen, 1000);
 

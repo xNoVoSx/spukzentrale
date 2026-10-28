@@ -83,7 +83,8 @@ class LichtBruecke:
                 time.sleep(3)
                 continue
             try:
-                daten = self._ser.read(4096)
+                # sofort weiterreichen, was da ist (read(4096) wartete bis zum Timeout -> Werte kamen in 0,2-s-Päckchen)
+                daten = self._ser.read(max(1, self._ser.in_waiting))
             except (serial.SerialException, OSError) as e:
                 log.warning("Licht-ESP: Lesefehler (%s) – Port wird neu geöffnet", e)
                 self._schliessen()
