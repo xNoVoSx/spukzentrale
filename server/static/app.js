@@ -93,10 +93,12 @@ function empfangen(m) {
   switch (m.t) {
     case "alles":
       S = m;
+      posStand = Date.now();
       aktualisieren(["zustand", "geraete", "medien", "daten", "protokoll"]);
       break;
     case "zustand":
       Object.assign(S, m);
+      posStand = Date.now();
       aktualisieren(["zustand"]);
       break;
     case "geraete":
@@ -352,7 +354,8 @@ bereich("show-jetzt", "show", ["zustand"], () => {
     <div class="karte">
       <h2>Jetzt</h2>
       <div class="jetzt">
-        <div class="name">🎵 ${esc(S.ambiente_jetzt || "–")}<small>Ambiente</small></div>
+        <div class="name">🎵 ${esc(S.ambiente_jetzt || "–")}<small>Ambiente <span data-fortschritt-zeit></span></small>
+          <div class="fortschritt" data-fortschritt hidden><i></i></div></div>
         <button class="klein" data-aktion="ambiente-weiter" ${S.ambiente_jetzt ? "" : "disabled"}>⏭ Weiter</button>
       </div>
       <div class="jetzt">
@@ -447,9 +450,35 @@ bereich("licht-stimmungen", "licht", ["daten", "zustand"], () => `
 // ---------------------------------------------------------------------------
 // Seite: Sounds
 // ---------------------------------------------------------------------------
+// Fortschritt des laufenden Ambiente-Stücks: der Server meldet (Stück, Sekunde) mit jedem Zustand, die Seite zählt
+// dazwischen selbst weiter
+let posStand = Date.now();
+function hoerPos() {
+  const p = S?.ambiente_pos;
+  if (!p || !S.zustand.ambiente_an) return null;
+  return { id: p.id, t: Math.min(p.dauer || Infinity, p.pos + (Date.now() - posStand) / 1000), dauer: p.dauer };
+}
+function fortschrittZeichnen() {
+  const p = hoerPos();
+  const text = p ? `${mmss(p.t)} / ${mmss(p.dauer)}` : "";
+  const anteil = p && p.dauer ? Math.min(100, (p.t / p.dauer) * 100) : 0;
+  for (const el of $$("[data-fortschritt]")) {
+    el.hidden = !p;
+    el.firstElementChild.style.width = `${anteil}%`;
+  }
+  for (const el of $$("[data-fortschritt-zeit]")) el.textContent = p ? `· ${text}` : "";
+  for (const el of $$("[data-kopf]")) {
+    const an = !!p && el.dataset.kopf === p.id;
+    el.hidden = !an;
+    if (an) el.style.left = `${anteil}%`;
+  }
+  for (const el of $$("[data-kopf-zeit]")) el.textContent = p && el.dataset.kopfZeit === p.id ? `▶ ${text} · ` : "";
+}
+setInterval(fortschrittZeichnen, 250);
+
 // Musikanalyse: Zeitleiste (Pegel grau, Gesang orange, ruhige Stellen grün) und Kurzinfo
 const STIMMUNGEN = { duester: "düster", ruhig: "ruhig", dramatisch: "dramatisch", verspielt: "verspielt" };
-const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, "0")}`;
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 const stellenText = (liste) => liste.map(([a, b]) => `${mmss(a)}-${mmss(b)}`).join(", ");
 function stellenLesen(text) {
   const zeit = (z) => {
@@ -499,7 +528,8 @@ bereich("sounds-ambiente", "sounds", ["medien", "zustand", "daten"], () => {
         <button class="klein symbol" data-aktion="musik-gesang" data-id="${s.id}" title="Gesangsstellen korrigieren">🎤</button>
         <button class="klein symbol" data-aktion="musik-umbenennen" data-id="${s.id}" title="Umbenennen">✏️</button>
         <button class="klein symbol gefahr" data-aktion="musik-loeschen" data-id="${s.id}" title="Löschen">🗑</button>
-        <div class="analyse">${zeitleiste(s)}<small>${analyseText(s)}</small></div>
+        <div class="analyse"><div class="zl">${zeitleiste(s)}<i class="abspielkopf" data-kopf="${s.id}" hidden></i></div>
+          <small><span data-kopf-zeit="${s.id}"></span>${analyseText(s)}</small></div>
       </li>`;
   }).join("");
   return `

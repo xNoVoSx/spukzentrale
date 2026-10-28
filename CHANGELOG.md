@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen. Versionierung nach [SemVer](https://semver.org/lang/de/);
 Firmware und Server tragen dieselbe Versionsnummer.
 
+## [1.3.5] – 2026-10-28
+
+- **Fortschritt des Ambiente-Stücks:** Show → Jetzt mit Balken und „1:12 / 3:13“, in der Playlist ein Abspielkopf auf
+  der Zeitleiste. Der Server meldet die Hörposition (`ambiente_pos`), die Seite zählt dazwischen selbst weiter.
+
 ## [1.3.4] – 2026-10-28
 
 - Musikanalyse v2: Ein- und Ausblenden am Anfang/Ende eines Stücks zählt nicht mehr als „ruhige Stelle“ – sonst

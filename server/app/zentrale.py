@@ -159,6 +159,7 @@ class Zentrale:
             "overlay": self.overlay.name if self.overlay else None,
             "szene": spieler.laufend if spieler else None,
             "ambiente_jetzt": self.ambiente.jetzt,
+            "ambiente_pos": self._ambiente_pos(),
             "ruhezeit": self.ruhezeit_aktiv,
             "show_fenster": self.show_fenster,
             "ton": self.ton_effektiv().model_dump(),
@@ -482,6 +483,14 @@ class Zentrale:
         for s in list(self.medien.daten.musik):
             if s.analyse is None or s.analyse.version < musikanalyse.ANALYSE_VERSION:
                 await self.musik_analysieren(s.id)
+
+    def _ambiente_pos(self) -> dict | None:
+        """Für die Fortschrittsanzeige: Stück, Sekunde (draußen zu hören) und Länge; die Oberfläche zählt selbst weiter."""
+        p = self.ambiente.position() if self.zustand.ambiente_an else None
+        if p is None:
+            return None
+        s = self.medien.musik(p[0])
+        return {"id": p[0], "pos": round(p[1], 2), "dauer": s.dauer_s if s else 0}
 
     def musik_lage(self) -> tuple[Musikstueck | None, float | None]:
         """Welches Ambiente-Stück ist draußen gerade an welcher Sekunde zu hören? (None, None) ohne Ambiente."""

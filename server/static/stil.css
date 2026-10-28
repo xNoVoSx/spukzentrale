@@ -287,3 +287,10 @@ code { font-size: 13px; background: var(--bg); padding: 1px 5px; border-radius: 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--rand); border-radius: 999px; font-size: 13px; cursor: pointer; }
 .chip input { accent-color: var(--lila); }
+
+/* Fortschritt des laufenden Stücks */
+.fortschritt { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--rand); overflow: hidden; }
+.fortschritt i { display: block; height: 100%; width: 0; background: var(--orange, #ff7a1a); transition: width .25s linear; }
+.zl { position: relative; }
+.zl .abspielkopf { position: absolute; top: 2px; bottom: -2px; width: 2px; margin-left: -1px; background: #fff; border-radius: 1px;
+  box-shadow: 0 0 4px rgba(255, 255, 255, .8); transition: left .25s linear; }

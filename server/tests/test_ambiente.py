@@ -112,5 +112,7 @@ async def test_springen_startet_mit_dem_stueck_und_geht_danach_weiter(ton):
         frames += len(block)
         if frames > RATE * 3.5:
             break
-    assert wechsel[:3] == ["zwei", "drei", "eins"]
+    # beim Hörbarwerden meldet das Stück sich noch einmal (Fortschrittsanzeige) – Reihenfolge ohne Wiederholungen
+    folge = [w for i, w in enumerate(wechsel) if i == 0 or w != wechsel[i - 1]]
+    assert folge[:3] == ["zwei", "drei", "eins"]
     assert a.naechstes_nach(drei) == eins and a.naechstes_nach(None) == eins

@@ -175,7 +175,10 @@ class Ambiente:
 
         def setzen() -> None:
             self.jetzt_id = mid
-            self._setze_jetzt(name)
+            if name == self.jetzt and self.bei_wechsel:
+                self.bei_wechsel(name)            # dasselbe Stück neu: Position in der Oberfläche zurücksetzen
+            else:
+                self._setze_jetzt(name)
 
         warten = ab - time.monotonic()
         if warten <= 0.5:
