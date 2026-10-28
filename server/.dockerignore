@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 tests/
-werkzeuge/
+werkzeuge/*
+!werkzeuge/modell_laden.py
+modelle/
 requirements-dev.txt
 pytest.ini
