@@ -1448,6 +1448,8 @@ const AKTIONEN = {
 async function hochladen(feldSel, pfad, zusatz) {
   const dateien = [...($(feldSel)?.files || [])];
   if (!dateien.length) return toast("Erst eine Datei auswählen", true);
+  // alle Dateien versuchen; was nicht geklappt hat, bleibt am Ende sichtbar stehen (nicht nur ein kurzer Toast)
+  const fehler = [];
   for (const [n, datei] of dateien.entries()) {
     toast(`${datei.name}: wird hochgeladen und umgewandelt (${n + 1}/${dateien.length}) …`);
     const fd = new FormData();
@@ -1455,11 +1457,17 @@ async function hochladen(feldSel, pfad, zusatz) {
     for (const [k, v] of Object.entries(zusatz())) if (v) fd.append(k, dateien.length > 1 && k === "name" ? "" : v);
     try {
       await api("POST", pfad, fd, true);
-    } catch {
-      return;
+    } catch (e) {
+      fehler.push(`${datei.name}: ${e.message || "Fehler"}`);
     }
   }
-  toast(dateien.length > 1 ? `${dateien.length} Dateien fertig` : "Fertig");
+  if (!fehler.length) {
+    toast(dateien.length > 1 ? `${dateien.length} Dateien fertig` : "Fertig");
+    $(feldSel).value = "";
+    return;
+  }
+  toast(`${dateien.length - fehler.length} von ${dateien.length} hochgeladen – ${fehler.length} fehlgeschlagen`, true);
+  alert(`Nicht hochgeladen (${fehler.length} von ${dateien.length}):\n\n${fehler.join("\n")}`);
 }
 
 document.addEventListener("click", async (e) => {
