@@ -1590,14 +1590,14 @@ bereich("ki-besuch", "ki", ["ki", "daten"], () => {
 bereich("ki-regie", "ki", ["ki", "zustand"], () => {
   const r = kiStatus.regie;
   if (!r) return "";
-  const optionen = Object.entries(r.optionen || {}).filter(([id]) => id !== "keiner");
+  const optionen = (r.optionen || []).filter((id) => id !== "keiner");
   return `
     <div class="karte">
       <h2>🎬 Regisseur <span class="marke ${r.aktiv ? "orange" : ""}">${S.zustand.regie_an ? (r.aktiv ? "an" : "an, wartet (Show/KI aus oder Pause)") : "aus"}</span></h2>
       <p class="hinweis">Während eines Besuchs wählt die KI die Effekte: nach jedem Satz eine Pointe (oder nichts) und in Pausen
         frühestens alle ${S.einstellungen.ki.regie_abstand_s} s. Zur Auswahl stehen die aktiven Zufallsregeln der aktuellen Gruselstufe
         (Sounds bis ${S.einstellungen.ki.regie_max_s} s) und reine Licht-Effekte. Nach dem Klingeln und während Szenen hält sie still.</p>
-      <p class="hinweis">Auswahl jetzt: ${optionen.map(([id]) => esc(id)).join(", ") || "–"}</p>
+      <p class="hinweis">Auswahl jetzt: ${optionen.map(esc).join(", ") || "–"}</p>
       <ul class="protokoll">
         ${r.verlauf.map((e) => `<li class="${e.grund.startsWith("Fehler") ? "fehler" : ""}"><time>${zeit(e.zeit)}</time><span><b>${esc(e.effekt || "–")}</b> · ${esc(e.anlass)}${e.grund ? `<br><small>${esc(e.grund)} (${e.ms} ms)</small>` : ""}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
       </ul>
