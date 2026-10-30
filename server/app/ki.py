@@ -45,7 +45,8 @@ SYSTEM = (
     "keine Namen. Schreibe nur den gesprochenen Satz: keine Emojis, keine Anführungszeichen, keine Regieanweisungen, "
     "keine Sternchen. Natürliche gesprochene Sprache, gern mit einer kurzen Pause (...). "
     "Sprich nur, wenn mindestens ein Mensch deutlich zu sehen ist – Fahrzeuge, Tiere, Gegenstände oder Deko "
-    "allein zählen nicht.\n"
+    "allein zählen nicht. Ist das Bild schwarz-weiß (Nachtsicht), nenne keine Farben – nur Formen, Masken, "
+    "Hüte, Umhänge, Gegenstände.\n"
     "Antworte als JSON: {\"mensch\": true/false, \"richtung\": kommt (aufs Haus bzw. die Kamera zu), geht (weg vom "
     "Haus, Rücken zur Kamera), steht oder unklar, \"satz\": der gesprochene Satz, leer wenn kein Mensch zu sehen ist, "
     "\"beschreibung\": sachliche Beschreibung in höchstens 25 Wörtern, was du siehst (Anzahl Personen, Kostüme bzw. "
@@ -160,10 +161,10 @@ class KiStimme:
         return r.content
 
     async def _satz(self, c: httpx.AsyncClient, bild: bytes, lage: str = "",
-                    bei_satz: Callable[[str], None] | None = None) -> tuple[str, str, str]:
+                    bei_satz: Callable[[str, str], None] | None = None) -> tuple[str, str, str]:
         """(Beschreibung, Satz, Richtung) – Satz leer, wenn kein Mensch zu sehen ist.
 
-        Liest die Antwort als Stream: bei_satz(satz) kommt, sobald der Satz fertig ist – die Beschreibung danach.
+        Liest die Antwort als Stream: bei_satz(satz, richtung) kommt, sobald der Satz fertig ist – die Beschreibung danach.
         """
         k = self.z.einst.ki
         hinweis = [STUFEN.get(self.z.zustand.gruselstufe, STUFEN[2])]
@@ -207,7 +208,7 @@ class KiStimme:
                     satz = satz_aus_teil(text)
                     if satz is not None:
                         gemeldet = True
-                        bei_satz(satz)
+                        bei_satz(satz, richtung_lesen(text))
         return (*antwort_lesen(text), richtung_lesen(text))
 
     async def _sprechen(self, c: httpx.AsyncClient, text: str) -> bytes:
@@ -219,10 +220,11 @@ class KiStimme:
 
     # ------------------------------------------------------------------
     async def ansprechen(self, kamera: str, vol: int = 100, quelle: str = "KI-Stimme", lage: str = "",
-                         reaktion: bool = True) -> str:
+                         reaktion: bool = True, still_bei: tuple[str, ...] = ()) -> str:
         """Kamera ansehen, Satz sprechen lassen.
 
-        Ergebnis: "gesagt", "niemand" (kein Mensch im Bild), "fehler" (KI weg, zu langsam …) oder "beschaeftigt".
+        Ergebnis: "gesagt", "niemand" (kein Mensch im Bild), "still" (Richtung in still_bei, z. B. Leute gehen),
+        "fehler" (KI weg, zu langsam …) oder "beschaeftigt".
         Den Ersatz-Sound bei "niemand"/"fehler" spielt der Aufrufer (je Auslöser einstellbar).
         """
         k = self.z.einst.ki
@@ -248,13 +250,18 @@ class KiStimme:
                     zeiten["bild"] = round(time.monotonic() - t0, 1)
                     self.letztes_bild, self.letztes_bild_zeit = bild, eintrag["zeit"]
                     # Satz kommt per Stream vor der Beschreibung: Stimme startet, während das Modell weiterschreibt
-                    satz_da: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+                    satz_da: asyncio.Future[tuple[str, str]] = asyncio.get_running_loop().create_future()
                     denken = asyncio.create_task(self._satz(
-                        c, bild, lage, lambda s: satz_da.done() or satz_da.set_result(s)))
+                        c, bild, lage, lambda s, r: satz_da.done() or satz_da.set_result((s, r))))
                     try:
                         await asyncio.wait({satz_da, denken}, return_when=asyncio.FIRST_COMPLETED)
-                        satz = satz_da.result() if satz_da.done() else denken.result()[1]
+                        satz, richtung = satz_da.result() if satz_da.done() else denken.result()[1:]
                         zeiten["text"] = round(time.monotonic() - t0, 1)
+                        if len(satz) >= 4 and richtung in still_bei:
+                            eintrag["beschreibung"], _, eintrag["richtung"] = await denken
+                            eintrag["ergebnis"], eintrag["grund"] = "still", f"Richtung „{richtung}“ – nicht ansprechen"
+                            self.z.protokollieren(f"{quelle}: Leute gehen – bleibt still", "info")
+                            return "still"
                         if len(satz) < 4:
                             eintrag["beschreibung"], _, eintrag["richtung"] = await denken
                             eintrag["ergebnis"] = "niemand"

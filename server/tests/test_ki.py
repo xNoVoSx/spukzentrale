@@ -175,3 +175,16 @@ def test_ki_ersatz_szene_je_ausloeser(client):
     assert st["szene"] is not None and st["szene"]["id"] == "begruessung"
     assert client.get("/api/ki/live/kein_kamera").status_code == 404
     assert client.get("/api/ki/live/camera.klingel").content == b"jpeg"
+
+
+def test_ki_bleibt_still_wenn_leute_gehen(client):
+    """still_bei: Richtung „geht“ -> nichts sagen, kein Sprach-Dienst, kein Flüstern."""
+    import asyncio
+    z = app.state.zentrale
+    z._test_richtung = "geht"
+    try:
+        assert asyncio.run(z.ki.ansprechen("camera.weg", lage="x", reaktion=False, still_bei=("geht",))) == "still"
+        assert not any(a[0] == "sprechen" for a in client.aufrufe)
+        assert z.ki.verlauf[0]["ergebnis"] == "still" and z.ki.verlauf[0]["richtung"] == "geht"
+    finally:
+        del z._test_richtung

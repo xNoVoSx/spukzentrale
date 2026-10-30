@@ -1515,7 +1515,7 @@ function aendern(el, live) {
 // ---------------------------------------------------------------------------
 const kiAusloeser = () => S.einstellungen.ausloeser.filter((a) => a.typ === "ki");
 const kiKameras = () => [...new Set([...kiAusloeser().map((a) => a.ziel).filter(Boolean), ...(haKameras || []).map((k) => k.entity_id)])];
-const KI_ERGEBNIS = { gesagt: ["gesagt", "orange"], niemand: ["kein Mensch", ""], fehler: ["Fehler", "rot"], beschaeftigt: ["besetzt", ""] };
+const KI_ERGEBNIS = { gesagt: ["gesagt", "orange"], niemand: ["kein Mensch", ""], fehler: ["Fehler", "rot"], beschaeftigt: ["besetzt", ""], still: ["still (gehen weg)", ""], abgebrochen: ["abgebrochen", ""] };
 
 async function kiLaden() {
   try {
@@ -1644,7 +1644,8 @@ bereich("ki-einstellungen", "ki", ["daten"], () => {
       </div>
       <div class="feldreihe">
         ${feld("besuch_ende_s", "Besuch vorbei nach (s ohne Person)", "number", ki.besuch_ende_s, 'min="10" max="600"')}
-        ${feld("nachlauf_s", "Danach noch still (s)", "number", ki.nachlauf_s, 'min="0" max="600"')}
+        ${feld("nachlauf_s", "Nachlauf (s)", "number", ki.nachlauf_s, 'min="0" max="600"')}
+        ${feld("neu_pruefen_s", "Neue Leute prüfen frühestens nach (s)", "number", ki.neu_pruefen_s, 'min="10" max="300"')}
       </div>
       ${kasten("abschied", "Beim Weggehen verabschieden", ki.abschied, "nie zurücklocken – nur ein Abschiedssatz")}
       <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`)

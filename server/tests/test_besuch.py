@@ -15,7 +15,10 @@ from app.modelle import Ausloeser
 def z(monkeypatch):
     gesagt: list[str] = []
 
-    async def ansprechen(self, kamera, vol=100, quelle="", lage="", reaktion=True):
+    async def ansprechen(self, kamera, vol=100, quelle="", lage="", reaktion=True, still_bei=()):
+        if self.z._richtung in still_bei:
+            self.z.geprueft += 1
+            return "still"
         gesagt.append(lage)
         self.verlauf.appendleft({"satz": f"Satz {len(gesagt)}", "richtung": self.z._richtung, "ergebnis": "gesagt"})
         return "gesagt"
@@ -25,6 +28,7 @@ def z(monkeypatch):
         zentrale = app.state.zentrale
         zentrale._richtung = "kommt"
         zentrale.gesagt = gesagt
+        zentrale.geprueft = 0
         zentrale.besuch.__init__(zentrale)        # sauberer Zustand
         yield zentrale
 
@@ -59,6 +63,10 @@ def test_normaler_besuch_bis_zum_klingeln_und_abschied(z):
     assert z.gesagt[-1] == ABSCHIED and b.zustand == "geht"
     asyncio.run(b.sensor(FERN, True, "fern"))
     assert len(z.gesagt) == 3                               # nie zurücklocken
+    z._richtung = "geht"
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    asyncio.run(b.sensor(FERN, True, "fern"))               # später: KI schaut hin, die gehen aber -> still
+    assert len(z.gesagt) == 3 and z.geprueft == 1 and b.zustand == "geht"
 
 
 def test_bleiben_stehen_hoechstens_einmal_nachfassen(z):
@@ -103,9 +111,11 @@ def test_besuch_endet_und_naechster_beginnt(z):
     _vorspulen(b, z.einst.ki.besuch_ende_s + 1)
     asyncio.run(b.takt(time.monotonic()))
     assert b.zustand == "nachlauf" and not b.aktiv
+    z._richtung = "geht"
     asyncio.run(b.sensor(FERN, True, "fern"))               # Leute auf dem Rückweg: still
     asyncio.run(b.sensor(FERN, False, "fern"))
     assert len(z.gesagt) == 1
+    z._richtung = "kommt"
     _vorspulen(b, z.einst.ki.nachlauf_s + 1)
     asyncio.run(b.takt(time.monotonic()))
     assert b.zustand == "leer"
@@ -160,3 +170,36 @@ def test_ausloeser_mit_rolle_laufen_ueber_den_besuch(z):
     z.zustand.ki_an = False                                     # KI aus: wieder ganz normaler Auslöser
     assert asyncio.run(z.ausloeser("f")) in (True, False) and z.gesagt == [LOCKEN]
     z.zustand.ki_an = True
+
+
+def test_naechste_gruppe_kommt_waehrend_die_erste_geht(z):
+    b = z.besuch
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    asyncio.run(b.sensor(NAH, False, "nah"))
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert b.zustand == "geht" and z.gesagt == [TUER, ABSCHIED]
+    asyncio.run(b.sensor(NAH, True, "nah"))                 # zu früh nach dem Abschied: nicht mal hinschauen
+    assert len(z.gesagt) == 2 and z.geprueft == 0
+    # Sensor bleibt dauerhaft an (ständig Leute im Bild): der Takt schaut nach neu_pruefen_s hin
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    z._richtung = "geht"
+    asyncio.run(b.takt(time.monotonic()))
+    assert z.geprueft == 1 and b.zustand == "geht"
+    asyncio.run(b.takt(time.monotonic()))                   # gleich danach nicht nochmal
+    assert z.geprueft == 1
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    b.letzte_pruefung -= z.einst.ki.neu_pruefen_s + 1
+    z._richtung = "kommt"
+    asyncio.run(b.takt(time.monotonic()))                   # neue Gruppe kommt: neuer Besuch
+    assert z.gesagt[-1] == LOCKEN and b.zustand == "gelockt" and b.gelockt == 1 and not b.abschied_gesagt
+
+
+def test_neue_gruppe_an_der_tuer(z):
+    b = z.besuch
+    z._richtung = "geht"
+    asyncio.run(b.sensor(FERN, True, "fern"))               # erste Gruppe geht schon
+    assert b.zustand == "geht"
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    z._richtung = "steht"
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    assert z.gesagt[-1] == TUER and b.zustand == "tuer" and b.tuer_gesagt

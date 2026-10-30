@@ -354,7 +354,8 @@ class KiEinst(BaseModel):
     abschied: bool = True                             # beim Weggehen verabschieden (nie zurücklocken)
     tuer_ruhe_s: int = Field(180, ge=0, le=1800)      # nach dem Klingeln still (ihr redet an der Tür)
     besuch_ende_s: int = Field(60, ge=10, le=600)     # so lange keine Person -> Besuch vorbei
-    nachlauf_s: int = Field(90, ge=0, le=600)         # danach noch still (Leute auf dem Rückweg)
+    nachlauf_s: int = Field(90, ge=0, le=600)         # danach Nachlauf: Leute auf dem Rückweg nicht zurücklocken
+    neu_pruefen_s: int = Field(30, ge=10, le=300)     # geht/Nachlauf: frühestens dann prüfen, ob Neue kommen
 
 
 class Mqtt(BaseModel):
