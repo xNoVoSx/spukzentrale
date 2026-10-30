@@ -1612,10 +1612,14 @@ bereich("ki-regie", "ki", ["ki", "zustand"], () => {
       <h2>🎬 Regisseur <span class="marke ${r.aktiv ? "orange" : ""}">${S.zustand.regie_an ? (r.aktiv ? "an" : "an, wartet (Show/KI aus oder Pause)") : "aus"}</span></h2>
       <p class="hinweis">Während eines Besuchs wählt die KI die Effekte: nach jedem Satz eine Pointe (oder nichts) und in Pausen
         frühestens alle ${S.einstellungen.ki.regie_abstand_s} s. Zur Auswahl stehen die aktiven Zufallsregeln der aktuellen Gruselstufe
-        (Sounds bis ${S.einstellungen.ki.regie_max_s} s) und reine Licht-Effekte. Nach dem Klingeln und während Szenen hält sie still.</p>
+        (Sounds bis ${S.einstellungen.ki.regie_max_s} s) und reine Licht-Effekte. Nach dem Klingeln und während Szenen hält sie still.
+        Claude bekommt nur Text (Gemmas Beschreibung, Lage, Musik) – nie ein Kamerabild.</p>
+      <p class="hinweis">Entscheidet: ${r.claude ? `<b>${esc(r.modell)}</b> (Ersatz: Gemma lokal)` : r.modell
+          ? '<span class="warnung">Gemma lokal – für Claude fehlt der API-Schlüssel (Umgebungsvariable ANTHROPIC_API_KEY im Stack)</span>'
+          : "Gemma lokal"}</p>
       <p class="hinweis">Auswahl jetzt: ${optionen.map(esc).join(", ") || "–"}</p>
       <ul class="protokoll">
-        ${r.verlauf.map((e) => `<li class="${e.grund.startsWith("Fehler") ? "fehler" : ""}"><time>${zeit(e.zeit)}</time><span><b>${esc(e.effekt || "–")}</b> · ${esc(e.anlass)}${e.grund ? `<br><small>${esc(e.grund)} (${e.ms} ms)</small>` : ""}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
+        ${r.verlauf.map((e) => `<li class="${e.grund.startsWith("Fehler") ? "fehler" : ""}"><time>${zeit(e.zeit)}</time><span><b>${esc(e.effekt || "–")}</b> · ${esc(e.anlass)}${e.grund ? `<br><small>${esc(e.grund)} (${e.modell ? esc(e.modell) + ", " : ""}${e.ms} ms)</small>` : ""}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
       </ul>
     </div>`;
 });
@@ -1702,6 +1706,10 @@ bereich("ki-einstellungen", "ki", ["daten", "ki-stimmen"], () => {
         ${feld("regie_abstand_s", "In Pausen frühestens alle (s)", "number", ki.regie_abstand_s, 'min="5" max="300"')}
         ${feld("regie_max_s", "Sounds höchstens (s lang)", "number", ki.regie_max_s, 'min="2" max="60"')}
         ${feld("regie_szene_max_s", "Szenen höchstens (s lang)", "number", ki.regie_szene_max_s, 'min="2" max="120"')}
+      </div>
+      <div class="feldreihe">
+        ${auswahl("regie_modell", "Wer entscheidet", [["claude-opus-5-5", "Claude Opus 5.5 (Ersatz: Gemma)"], ["claude-sonnet-5-5", "Claude Sonnet 5.5 (Ersatz: Gemma)"], ["", "nur Gemma lokal"]], ki.regie_modell)}
+        ${feld("regie_zeitlimit_s", "Claude höchstens (s)", "number", ki.regie_zeitlimit_s, 'min="1" max="30" step="0.5"')}
       </div>
       <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`)
   ].join("");

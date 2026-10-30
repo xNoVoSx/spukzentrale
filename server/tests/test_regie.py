@@ -17,7 +17,7 @@ def z(monkeypatch):
 
     async def fragen(self, anlass, satz, aus):
         gefragt.append((anlass, list(aus)))
-        return self.z._regie_wahl, "passt"
+        return self.z._regie_wahl, "passt", "Test"
 
     async def fx_spielen(self, f, vol=100, licht="auto", quelle=""):
         gespielt.append(f.kategorie)
@@ -76,6 +76,9 @@ def test_standard_ist_aus_und_ohne_besuch_passiert_nichts(z):
 
 def test_pause_im_besuch_spielt_effekt_und_belegt(z):
     z.besuch.zustand = "gelockt"
+    asyncio.run(z.regie.takt(time.monotonic() + 999))       # niemand mehr im Bild: nichts
+    assert z.gefragt == []
+    z.besuch.an["fern"] = True
     asyncio.run(z.regie.takt(time.monotonic() + 999))
     assert z.gespielt == ["donner"] and z.regie.frei_in() > 5
     assert z.regie.verlauf[0]["effekt"] == "donner"
@@ -115,7 +118,7 @@ def test_entscheidung_verworfen_wenn_inzwischen_geklingelt(z, monkeypatch):
 
     async def fragen(self, anlass, satz, aus):
         self.z.besuch.zustand = "geklingelt"
-        return "donner", "Spannung"
+        return "donner", "Spannung", "Test"
 
     monkeypatch.setattr(Regie, "_fragen", fragen)
     assert asyncio.run(z.regie.entscheiden("Pause")) == "keiner"
@@ -139,3 +142,70 @@ def test_api_schalter():
         assert "regie" in c.get("/api/ki/status").json()
         c.post("/api/regie", json={"an": False})
         assert c.get("/api/status").json()["zustand"]["regie_an"] is False
+
+
+def test_claude_entscheidet_und_gemma_springt_ein(z, monkeypatch):
+    """Ohne Schlüssel: lokal. Mit Schlüssel: Claude bekommt nur Text; Fehler/Ablehnung -> lokales Modell."""
+    monkeypatch.undo()                     # echtes _fragen
+    z.medien.fx_der_kategorie = lambda k: [Effekt(id="d1", name="Donner", kategorie="donner", dauer_ms=6000)] if k == "donner" else []
+    lokal, claude = [], []
+
+    async def lokal_fragen(self, text, schema, aus):
+        lokal.append(text)
+        return "licht_blitz", "lokal"
+
+    class Antwort:
+        def __init__(self, text, stop="end_turn"):
+            self.stop_reason = stop
+            self.content = [type("B", (), {"type": "text", "text": text})()]
+
+    class Nachrichten:
+        def __init__(self):
+            self.antwort = Antwort('{"effekt": "donner", "grund": "Spannung"}')
+
+        async def create(self, **kw):
+            claude.append(kw)
+            if isinstance(self.antwort, Exception):
+                raise self.antwort
+            return self.antwort
+
+    nachrichten = Nachrichten()
+    monkeypatch.setattr(Regie, "_lokal_fragen", lokal_fragen)
+    z.regie._claude = type("C", (), {"beta": type("B", (), {"messages": nachrichten})()})()
+    aus = {"keiner": "-", "donner": "Donner", "licht_blitz": "Blitz"}
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert asyncio.run(z.regie._fragen("Pause", "", aus))[2] == "Gemma (lokal)" and not claude
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    e, grund, modell = asyncio.run(z.regie._fragen("Pause", "Komm näher", aus))
+    assert (e, modell) == ("donner", "Claude Opus 5.5")
+    kw = claude[-1]
+    assert kw["model"] == "claude-opus-5-5" and kw["output_config"]["effort"] == "low"
+    assert kw["output_config"]["format"]["schema"]["properties"]["effekt"]["enum"] == list(aus)
+    inhalt = kw["messages"][0]["content"]
+    assert isinstance(inhalt, str) and "Komm näher" in inhalt          # nur Text, kein Bild
+    nachrichten.antwort = Antwort("", stop="refusal")
+    assert asyncio.run(z.regie._fragen("Pause", "", aus))[2] == "Gemma (lokal)"
+    nachrichten.antwort = TimeoutError()
+    assert asyncio.run(z.regie._fragen("Pause", "", aus))[:2] == ("licht_blitz", "lokal")
+    z.regie._claude = None
+
+
+def test_feste_regeln_schreck_und_musik(z):
+    z.zustand.ambiente_an = True
+    z.besuch.zustand = "tuer"
+    z.medien.fx_der_kategorie = lambda k: [Effekt(id=k, name=k, kategorie=k, dauer_ms=3000)]
+    z.ereignisse.regeln.append(Regel(id="s", typ="kategorie", ziel="schrei"))
+    z.zustand.gruselstufe = 3
+    assert "schrei" in z.regie.optionen() and "musik_stille" in z.regie.optionen()
+    z._regie_wahl = "schrei"
+    asyncio.run(z.regie.entscheiden("Pause"))
+    assert "schrei" not in z.regie.optionen()                 # nach dem Schreck erst mal nichts Heftiges
+    z.regie.belegt_bis = 0
+    z._regie_wahl = "musik_stille"
+    asyncio.run(z.regie.entscheiden("Pause"))
+    asyncio.run(z.musik_normal())
+    assert "musik_stille" not in z.regie.optionen()           # einmal pro Besuch
+    z.besuch._neu()
+    assert "musik_stille" in z.regie.optionen()
+    z.zustand.ambiente_an = False

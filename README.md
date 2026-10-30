@@ -196,6 +196,7 @@ Das Docker-Image baut GitHub Actions bei jedem Push und legt es unter
    | `SPUK_MEDIEN_PFAD` | Musik und Effekt-Sounds | `/docker/spukzentrale/medien` |
    | `SPUK_PORT` | Port der Weboberfläche | `8095` |
    | `SPUK_TAG` | Image-Version (`latest` oder z. B. `1.0.0`) | `latest` |
+   | `ANTHROPIC_API_KEY` | optional: Claude entscheidet als KI-Regisseur (bekommt nur Text, nie Kamerabilder); ohne Schlüssel entscheidet das lokale Modell | – |
    | `TZ` | Zeitzone | `Europe/Berlin` |
 
 4. **Deploy the stack**, dann `http://<IP des Docker-Hosts>:8095` im Handy öffnen. Tipp: „Zum

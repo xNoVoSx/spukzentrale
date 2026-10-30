@@ -9,3 +9,4 @@ aiomqtt==2.5.1
 websockets==17.3
 tzdata==2026.2
 httpx==0.28.1
+anthropic==2.3.0

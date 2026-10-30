@@ -5,6 +5,7 @@
 #   SPUK_MEDIEN_PFAD  Musik und Effekt-Sounds        (Standard: /docker/spukzentrale/medien)
 #   SPUK_PORT         Port der Weboberfläche          (Standard: 8095)
 #   SPUK_TAG          Image-Version, z. B. 1.0.0      (Standard: latest)
+#   ANTHROPIC_API_KEY optional: Claude als KI-Regisseur (sonst entscheidet das lokale Modell)
 services:
   spukzentrale:
     image: ghcr.io/xnovosx/spukzentrale:${SPUK_TAG:-latest}
@@ -14,6 +15,7 @@ services:
       - "${SPUK_PORT:-8095}:8095"
     environment:
       TZ: ${TZ:-Europe/Berlin}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - ${SPUK_CONFIG_PFAD:-/docker/spukzentrale}:/data/config
       - ${SPUK_MEDIEN_PFAD:-/docker/spukzentrale/medien}:/data/medien

@@ -377,6 +377,8 @@ class KiEinst(BaseModel):
     regie_abstand_s: int = Field(15, ge=5, le=300)    # in Pausen frühestens so oft ein Effekt
     regie_max_s: int = Field(10, ge=2, le=60)         # längere Sounds nimmt der Regisseur nicht
     regie_szene_max_s: int = Field(15, ge=2, le=120)  # längere Szenen nimmt der Regisseur nicht
+    regie_modell: str = Field("claude-opus-5-5", max_length=60)   # Claude-Modell (leer = nur lokal); Schlüssel: Umgebungsvariable ANTHROPIC_API_KEY
+    regie_zeitlimit_s: float = Field(6.0, ge=1, le=30)  # länger braucht Claude nicht – sonst entscheidet das lokale Modell
 
 
 class Mqtt(BaseModel):

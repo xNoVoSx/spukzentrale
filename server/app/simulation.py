@@ -116,6 +116,7 @@ class Simulation:
     async def _lauf(self, name: str) -> None:
         titel, schritte = DREHBUECHER[name]
         g, g2 = random.sample(GRUPPEN, 2)
+        self.z.besuch.zuruecksetzen()
         self.start = time.monotonic()
         self.dauer = max(t for t, *_ in schritte)
         self.z.protokollieren(f"PC-Test: Simulation „{titel}“ – {g}", "info")

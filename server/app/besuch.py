@@ -4,7 +4,9 @@ Zustände:
   leer       niemand da
   gelockt    auf dem Weg angesprochen („komm näher“), höchstens locken_max-mal
   tuer       an der Haustür angesprochen („klingel, wenn du dich traust“) – genau einmal pro Besuch
-  geklingelt Klingel gedrückt: Schreck-Szene läuft über den normalen Auslöser, danach tuer_ruhe_s still
+  geklingelt Klingel gedrückt: Schreck-Szene läuft über den normalen Auslöser, die Tür bleibt tuer_ruhe_s still.
+             Auf dem Weg (die Weg-Kamera sieht die Tür nicht) schaut die KI ab neu_pruefen_s nach dem Klingeln hin:
+             gehen die Leute -> Abschied, kommen schon die nächsten -> neuer Besuch
   geht       die Leute gehen: höchstens ein Abschied, nie wieder locken
   nachlauf   Besuch vorbei (besuch_ende_s ohne Person), noch nachlauf_s – Leute auf dem Rückweg
 
@@ -13,6 +15,8 @@ nach der letzten Ansage/Prüfung), schaut die KI hin. Kommt oder steht jemand, b
 Leute weg, bleibt sie stumm (kein Flüstern, kein Ersatz-Sound).
 
 Grundregeln gegen Durcheinander:
+  - Die Tür hat Vorrang: steht jemand an der Tür (Klingel-Kamera), spricht die Stimme niemanden auf dem Weg an.
+    Zwei Gruppen an der Tür sind ein Besuch (eine Aufforderung, ein Klingeln).
   - Es spricht immer nur eine KI-Stimme (KiStimme.laeuft), während einer Szene spricht sie gar nicht.
   - Zufallsereignisse pausieren, solange ein Besuch läuft (siehe ereignisse.Generator).
   - Wer geht, wird nie zurückgelockt; nach dem Klingeln bleibt die KI still.
@@ -92,6 +96,7 @@ class Besuch:
         self._melden()
 
     def _neu(self) -> None:
+        self.z.regie.neuer_besuch()
         self.gelockt = 0
         self.tuer_gesagt = self.abschied_gesagt = False
         self.letzter_satz = ""
@@ -122,6 +127,9 @@ class Besuch:
             self._melden()
             return
         st = self.zustand
+        if a.rolle == "fern" and self.an["nah"]:
+            self._melden()                                       # Tür hat Vorrang: niemanden auf dem Weg ansprechen
+            return
         if a.rolle == "fern":
             if st in ("leer",):
                 self._wechsel("gelockt")
@@ -131,11 +139,10 @@ class Besuch:
                 await self._nachfassen(a, quelle)
             elif st == "tuer" and not self.an["nah"]:
                 await self._abschied(a, quelle)                  # waren an der Tür, sind jetzt wieder auf dem Weg
-            elif st == "geklingelt" and jetzt - self.klingel_zeit >= self.z.einst.ki.tuer_ruhe_s:
-                await self._abschied(a, quelle)
+            elif st == "geklingelt":
+                await self._nach_klingel(a, quelle)
             elif st in ("geht", "nachlauf"):
                 await self._neue_leute(a, quelle)
-            # geklingelt (Ruhe): still
         else:  # nah
             if st in ("geht", "nachlauf"):
                 await self._neue_leute(a, quelle)
@@ -157,7 +164,10 @@ class Besuch:
 
     async def _nachfassen(self, a: Ausloeser, quelle: str) -> None:
         k = self.z.einst.ki
-        if self.gelockt >= k.locken_max or self.an["nah"]:
+        if self.an["nah"]:
+            return
+        if self.gelockt >= k.locken_max:
+            await self._weggehen_pruefen(a, quelle)
             return
         if time.monotonic() - self.letzte_ansprache < k.locken_wiederholen_s:
             return
@@ -188,6 +198,55 @@ class Besuch:
         else:
             self.tuer_gesagt = True
             self._wechsel("tuer")
+
+    async def _nach_klingel(self, a: Ausloeser, quelle: str) -> None:
+        """Nach dem Klingeln jemand auf dem Weg: die Leute gehen (Abschied) oder die nächsten kommen (neuer Besuch)."""
+        k = self.z.einst.ki
+        jetzt = time.monotonic()
+        if jetzt - self.klingel_zeit < k.neu_pruefen_s or not self._darf_sprechen():
+            return
+        if jetzt - max(self.letzte_ansprache, self.letzte_pruefung) < k.neu_pruefen_s:
+            return
+        self.letzte_pruefung = jetzt
+        # LOCKEN sagt dem Modell: wer kommt, wird gelockt – wer geht, wird verabschiedet
+        abschied = k.abschied and not self.abschied_gesagt
+        ergebnis = await self._sprechen(a, quelle, LOCKEN, reaktion=False, still_bei=() if abschied else ("geht",))
+        self.letzte_pruefung = time.monotonic()
+        if ergebnis != "gesagt" or self.zustand != "geklingelt":
+            return
+        e = self.z.ki.verlauf[0] if self.z.ki.verlauf else {}
+        if e.get("richtung") == "geht":
+            self.abschied_gesagt = True
+            self._wechsel("geht")
+            return
+        log.info("Besuch: nach dem Klingeln kommen neue Leute")
+        satz = self.letzter_satz
+        self._neu()
+        self.letzter_satz = satz
+        self.gelockt = 1
+        self._wechsel("gelockt")
+
+    async def _weggehen_pruefen(self, a: Ausloeser, quelle: str) -> None:
+        """Genug gelockt: nur noch verabschieden – und nur, wenn das Modell die Leute wirklich gehen sieht."""
+        k = self.z.einst.ki
+        jetzt = time.monotonic()
+        if not k.abschied or self.abschied_gesagt or not self._darf_sprechen():
+            return
+        if jetzt - max(self.letzte_ansprache, self.letzte_pruefung) < k.neu_pruefen_s:
+            return
+        self.letzte_pruefung = jetzt
+        ergebnis = await self._sprechen(a, quelle, ABSCHIED, reaktion=False, still_bei=("kommt", "steht", "unklar"))
+        self.letzte_pruefung = time.monotonic()
+        if ergebnis == "gesagt" and self.zustand == "gelockt":
+            self.abschied_gesagt = True
+            self._wechsel("geht")
+
+    def zuruecksetzen(self) -> None:
+        """Frischer Besuch (PC-Test: jede Simulation beginnt bei „niemand da“), eine Pause bleibt."""
+        pause = self.pause_bis
+        self.__init__(self.z)
+        self.pause_bis = pause
+        self._melden()
 
     async def _abschied(self, a: Ausloeser, quelle: str) -> None:
         self._wechsel("geht")
@@ -241,9 +300,12 @@ class Besuch:
         if st == "gelockt" and self.an["fern"] and not self.an["nah"] and self.fern and not self.z.ki.laeuft:
             if self.gelockt < k.locken_max and jetzt - self.letzte_ansprache >= k.locken_wiederholen_s:
                 await self._nachfassen(self.fern, self.fern.name)
+        # nach dem Klingeln bleibt der Weg-Sensor an: gehen die Leute oder kommen schon die nächsten?
+        if st == "geklingelt" and self.an["fern"] and not self.an["nah"] and self.fern and not self.z.ki.laeuft:
+            await self._nach_klingel(self.fern, self.fern.name)
         # geht/nachlauf und der Sensor bleibt an: ab und zu schauen, ob schon die nächste Gruppe kommt
         if st in ("geht", "nachlauf") and jemand and not self.z.ki.laeuft:
-            a = self.fern if self.an["fern"] and self.fern else self.nah if self.an["nah"] else None
+            a = self.nah if self.an["nah"] and self.nah else self.fern if self.an["fern"] else None
             if a:
                 await self._neue_leute(a, a.name)
         if st in ("gelockt", "tuer", "geklingelt", "geht") and not jemand and not self.z.ki.laeuft:

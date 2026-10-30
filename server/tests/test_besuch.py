@@ -43,6 +43,7 @@ def _vorspulen(b, s):
     b.zuletzt_jemand -= s
     b.klingel_zeit -= s
     b.seit -= s
+    b.letzte_pruefung -= s
 
 
 def test_normaler_besuch_bis_zum_klingeln_und_abschied(z):
@@ -58,12 +59,13 @@ def test_normaler_besuch_bis_zum_klingeln_und_abschied(z):
     assert b.zustand == "geklingelt" and z.ki.abbrechen
     asyncio.run(b.sensor(FERN, True, "fern"))               # gleich nach dem Klingeln: still (ihr redet)
     assert len(z.gesagt) == 2
-    _vorspulen(b, z.einst.ki.tuer_ruhe_s + 1)
-    asyncio.run(b.sensor(FERN, True, "fern"))               # gehen wieder: Abschied, einmal
-    assert z.gesagt[-1] == ABSCHIED and b.zustand == "geht"
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    z._richtung = "geht"
+    asyncio.run(b.sensor(NAH, False, "nah"))                # Tür wieder frei
+    asyncio.run(b.sensor(FERN, True, "fern"))               # gehen wieder (Modell sieht Rücken): Abschied, einmal
+    assert z.gesagt[-1] == LOCKEN and b.zustand == "geht" and b.abschied_gesagt
     asyncio.run(b.sensor(FERN, True, "fern"))
     assert len(z.gesagt) == 3                               # nie zurücklocken
-    z._richtung = "geht"
     _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
     asyncio.run(b.sensor(FERN, True, "fern"))               # später: KI schaut hin, die gehen aber -> still
     assert len(z.gesagt) == 3 and z.geprueft == 1 and b.zustand == "geht"
@@ -180,6 +182,7 @@ def test_naechste_gruppe_kommt_waehrend_die_erste_geht(z):
     assert b.zustand == "geht" and z.gesagt == [TUER, ABSCHIED]
     asyncio.run(b.sensor(NAH, True, "nah"))                 # zu früh nach dem Abschied: nicht mal hinschauen
     assert len(z.gesagt) == 2 and z.geprueft == 0
+    asyncio.run(b.sensor(NAH, False, "nah"))
     # Sensor bleibt dauerhaft an (ständig Leute im Bild): der Takt schaut nach neu_pruefen_s hin
     _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
     z._richtung = "geht"
@@ -188,7 +191,6 @@ def test_naechste_gruppe_kommt_waehrend_die_erste_geht(z):
     asyncio.run(b.takt(time.monotonic()))                   # gleich danach nicht nochmal
     assert z.geprueft == 1
     _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
-    b.letzte_pruefung -= z.einst.ki.neu_pruefen_s + 1
     z._richtung = "kommt"
     asyncio.run(b.takt(time.monotonic()))                   # neue Gruppe kommt: neuer Besuch
     assert z.gesagt[-1] == LOCKEN and b.zustand == "gelockt" and b.gelockt == 1 and not b.abschied_gesagt
@@ -203,3 +205,50 @@ def test_neue_gruppe_an_der_tuer(z):
     z._richtung = "steht"
     asyncio.run(b.sensor(NAH, True, "nah"))
     assert z.gesagt[-1] == TUER and b.zustand == "tuer" and b.tuer_gesagt
+
+
+def test_nach_dem_klingeln_kommt_schon_die_naechste_gruppe(z):
+    b = z.besuch
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    b.klingel()
+    asyncio.run(b.sensor(NAH, False, "nah"))
+    asyncio.run(b.sensor(FERN, True, "fern"))               # gleich nach dem Klingeln: still
+    assert z.gesagt == [TUER]
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    asyncio.run(b.takt(time.monotonic()))                   # Weg-Sensor bleibt an, neue Leute kommen
+    assert z.gesagt[-1] == LOCKEN and b.zustand == "gelockt" and b.gelockt == 1 and not b.tuer_gesagt
+    asyncio.run(b.sensor(NAH, True, "nah"))                 # die Neuen an der Tür: wieder Aufforderung
+    assert z.gesagt[-1] == TUER and b.zustand == "tuer"
+
+
+def test_genug_gelockt_dann_nur_noch_abschied_wenn_sie_gehen(z):
+    b = z.besuch
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    _vorspulen(b, 31)
+    asyncio.run(b.takt(time.monotonic()))                   # einmal nachgefasst -> Maximum (2)
+    assert b.gelockt == 2 and len(z.gesagt) == 2
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    asyncio.run(b.sensor(FERN, True, "fern"))               # stehen noch da: still
+    assert len(z.gesagt) == 2 and z.geprueft == 1 and b.zustand == "gelockt"
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    z._richtung = "geht"
+    asyncio.run(b.sensor(FERN, True, "fern"))               # drehen um: Abschied
+    assert z.gesagt[-1] == ABSCHIED and b.zustand == "geht" and b.abschied_gesagt
+
+
+def test_tuer_hat_vorrang(z):
+    """Gruppe A steht an der Tür (noch nicht geklingelt), Gruppe B kommt den Weg herauf: niemand redet dazwischen."""
+    b = z.besuch
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    assert z.gesagt == [TUER]
+    _vorspulen(b, 120)
+    asyncio.run(b.sensor(FERN, True, "fern"))               # B auf dem Weg, A noch an der Tür: still
+    asyncio.run(b.takt(time.monotonic()))
+    assert z.gesagt == [TUER] and b.zustand == "tuer"
+    b.klingel()                                             # beide klingeln zusammen: ein Besuch
+    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
+    asyncio.run(b.takt(time.monotonic()))                   # du redest an der Tür, Weg-Sensor an: still
+    assert z.gesagt == [TUER]
+    asyncio.run(b.sensor(NAH, False, "nah"))                # Tür frei, auf dem Weg jemand (neue Leute)
+    asyncio.run(b.takt(time.monotonic()))
+    assert z.gesagt[-1] == LOCKEN and b.zustand == "gelockt"
