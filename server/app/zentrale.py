@@ -165,7 +165,10 @@ class Zentrale:
 
     def fx_kapazitaet_kb(self) -> int:
         g = self.geraete.get("sound")
-        gesamt = (g.hallo.get("fx_gesamt_kb") if g else None) or FX_KAPAZITAET_STANDARD_KB
+        gesamt = ((g.hallo.get("fx_gesamt_kb") if g else None) or self.medien.daten.sound_speicher_kb
+                  or FX_KAPAZITAET_STANDARD_KB)
+        if not gesamt:
+            return 0                                   # unbekannt: Hochladen nicht blockieren
         return max(0, int(gesamt) - FX_RESERVE_KB)
 
     # ------------------------------------------------------------------
@@ -201,6 +204,7 @@ class Zentrale:
             "fx": [f.model_dump() for f in self.medien.daten.fx],
             "fx_belegt_kb": self.medien.fx_belegt_kb(),
             "fx_kapazitaet_kb": self.fx_kapazitaet_kb(),
+            "sound_plattform": self.medien.daten.sound_plattform,
             "analyse_laeuft": sorted(self.analyse_laeuft),
         }
 
@@ -312,6 +316,12 @@ class Zentrale:
                 await self.licht.zustand(self.licht_effektiv(), temp=self.overlay is not None)
                 await self.licht.vorschau(bool(self.ui))
             else:
+                d = self.medien.daten
+                plattform, speicher = str(msg.get("plattform", "esp")), int(msg.get("fx_gesamt_kb") or 0)
+                # der Browser-Test meldet keinen echten Speicher – den Pi nicht damit überschreiben
+                if plattform != "browser" and speicher and (d.sound_plattform, d.sound_speicher_kb) != (plattform, speicher):
+                    d.sound_plattform, d.sound_speicher_kb = plattform, speicher
+                    self.medien.speichern()
                 await self.sound_konfigurieren()
                 await self.fx_sync()
                 if self.zustand.ambiente_an:

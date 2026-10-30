@@ -629,7 +629,8 @@ bereich("sounds-fx", "sounds", ["medien", "daten"], () => {
     <div class="karte">
       <h2>Effekt-Sounds</h2>
       <div class="balken ${prozent > 95 ? "voll" : ""}"><i style="width:${prozent.toFixed(1)}%"></i></div>
-      <p class="hinweis">${S.geraete.sound?.hallo?.plattform === "pi"
+      <p class="hinweis">${!m.fx_kapazitaet_kb ? `Effekte: ${(m.fx_belegt_kb / 1024).toFixed(1)} MB – das Sound-Gerät hat sich noch nicht gemeldet`
+        : (S.geraete.sound?.hallo?.plattform || m.sound_plattform) === "pi"
         ? `Effekte auf der SD-Karte des Pi: ${(m.fx_belegt_kb / 1024).toFixed(1)} MB belegt, ${(m.fx_kapazitaet_kb / 1048576).toFixed(1)} GB Platz`
         : `Speicher im Sound-ESP: ${m.fx_belegt_kb} von ${m.fx_kapazitaet_kb} KB (≈ ${Math.max(0, Math.round((m.fx_kapazitaet_kb - m.fx_belegt_kb) / 11))} s frei)`}</p>
       ${regler("ton", "Lautstärke", S.einstellungen.ton.fx_vol, 'data-feld="fx_vol"', 0, 100, " %")}

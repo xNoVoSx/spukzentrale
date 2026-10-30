@@ -204,6 +204,9 @@ class Medien(BaseModel):
     musik: list[Musikstueck] = Field(default_factory=list)
     playlist: Playlist = Field(default_factory=Playlist)
     fx: list[Effekt] = Field(default_factory=list)
+    # zuletzt gemeldetes Sound-Gerät – gilt weiter, wenn es gerade aus ist (sonst wäre der Speicher „voll“)
+    sound_plattform: str = ""
+    sound_speicher_kb: int = 0
 
 
 # ---------------------------------------------------------------------------

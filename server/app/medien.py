@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 FX_MAX_S = 60
 FX_RATE = 22050
 FX_BLOCK = 512
-FX_KAPAZITAET_STANDARD_KB = 2200  # bis der Sound-ESP seine echte Größe meldet
+FX_KAPAZITAET_STANDARD_KB = 0     # noch nie ein Sound-Gerät gemeldet: nicht begrenzen (das Gerät prüft beim Abgleich)
 FX_RESERVE_KB = 64                # Verwaltungsdaten von LittleFS
 ID_MUSTER = re.compile(r"^[0-9a-f]{12}$")
 

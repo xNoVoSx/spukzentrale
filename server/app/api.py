@@ -486,7 +486,8 @@ async def fx_hochladen(
         raise HTTPException(400, f"Umwandlung fehlgeschlagen: {e}") from e
     finally:
         roh.unlink(missing_ok=True)
-    if not z.medien.fx(fid) and z.medien.fx_belegt_kb() + groesse // 1024 + 4 > z.fx_kapazitaet_kb():
+    kapazitaet = z.fx_kapazitaet_kb()
+    if not z.medien.fx(fid) and kapazitaet and z.medien.fx_belegt_kb() + groesse // 1024 + 4 > kapazitaet:
         z.medien.fx_pfad(fid).unlink(missing_ok=True)
         z.medien.fx_vorhoer_pfad(fid).unlink(missing_ok=True)
         raise HTTPException(507, "Der Effekt-Speicher des Sound-Geräts ist voll – lösche erst andere Effekte")

@@ -82,3 +82,19 @@ def test_browser_als_geraet():
                     break
             texte = [p["text"] for p in c.get("/api/status").json()["protokoll"]]
             assert any("PC-Test im Browser (Sound) verbunden" in t for t in texte)
+
+
+def test_speicher_des_pi_gilt_weiter_wenn_er_aus_ist():
+    with TestClient(app) as c:
+        z = app.state.zentrale
+        z.medien.daten.sound_plattform, z.medien.daten.sound_speicher_kb = "", 0
+        assert z.fx_kapazitaet_kb() == 0                    # nie ein Gerät gesehen: nicht begrenzen
+        for plattform, kb in (("pi", 50_000_000), ("browser", 10_000_000)):
+            with c.websocket_connect("/ws/geraet?rolle=sound&fw=x") as ws:
+                ws.send_json({"t": "hallo", "rolle": "sound", "fw": "x", "plattform": plattform, "fx_gesamt_kb": kb})
+                for _ in range(10):
+                    if ws.receive_json().get("t") == "fx_sync":
+                        break
+        # Pi und Browser-Test sind wieder weg: es gilt der Speicher des Pi (der Browser überschreibt ihn nicht)
+        assert z.medien.daten.sound_plattform == "pi" and z.fx_kapazitaet_kb() == 50_000_000 - 64
+        assert c.get("/api/status").json()["medien"]["sound_plattform"] == "pi"
