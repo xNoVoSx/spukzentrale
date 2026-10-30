@@ -137,7 +137,7 @@ class KiStimme:
         k = self.z.einst.ki
         hinweis = [STUFEN.get(self.z.zustand.gruselstufe, STUFEN[2])]
         if lage.strip():
-            hinweis.append(lage.strip())
+            hinweis.append("Deine Aufgabe in diesem Moment (der Satz muss das erfüllen): " + lage.strip())
         if k.zusatz.strip():
             hinweis.append(k.zusatz.strip())
         if self.letzte:
