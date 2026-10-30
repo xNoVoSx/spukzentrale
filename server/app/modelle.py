@@ -292,6 +292,9 @@ class Ausloeser(BaseModel):
     typ: Literal["szene", "kategorie", "ki"] = "szene"
     ziel: str = "schreck"          # Szenen-ID, Kategorie bzw. bei "ki" die Kamera (camera.…)
     hinweis: str = Field("", max_length=300)  # nur "ki": Lage für das Modell (z. B. „noch weit weg“)
+    # nur "ki": was stattdessen passiert, wenn die KI aus ist, keinen Menschen sieht oder nicht antwortet
+    ersatz_typ: Literal["kategorie", "szene"] = "kategorie"
+    ersatz_ziel: str = ""          # leer = Ersatz-Kategorie aus den KI-Einstellungen
     vol: int = Field(100, ge=0, le=100)
     sperre_s: int = Field(60, ge=0, le=3600)
     gruselstufe_min: int = Field(1, ge=1, le=3)

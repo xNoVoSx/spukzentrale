@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import logging
 import shutil
 import time
@@ -577,7 +578,35 @@ async def ki_test(request: Request, d: KiTest):
     z = zentrale(request)
     if z.ki.laeuft:
         raise HTTPException(409, "Die KI-Stimme spricht gerade")
-    return {"gesagt": await z.ki.ansprechen(d.kamera, quelle="KI-Test", lage=d.hinweis)}
+    return {"ergebnis": await z.ki.ansprechen(d.kamera, quelle="KI-Test", lage=d.hinweis)}
+
+
+@router.get("/api/ki/status")
+async def ki_status(request: Request):
+    z = zentrale(request)
+    return {"laeuft": z.ki.laeuft, "verlauf": list(z.ki.verlauf), "bild_zeit": z.ki.letztes_bild_zeit,
+            **await z.ki.dienste()}
+
+
+@router.get("/api/ki/bild")
+async def ki_bild(request: Request):
+    """Das Bild, das die KI zuletzt angesehen hat (nur im Speicher)."""
+    bild = zentrale(request).ki.letztes_bild
+    if bild is None:
+        raise _nicht_gefunden("Ein Bild")
+    return Response(bild, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/ki/live/{kamera}")
+async def ki_live(request: Request, kamera: str):
+    """Aktuelles Standbild einer Kamera (die KI-Zentrale holt es alle paar Sekunden, solange sie offen ist)."""
+    if not re.fullmatch(r"camera\.[a-z0-9_]+", kamera):
+        raise _nicht_gefunden("Diese Kamera")
+    try:
+        bild = await zentrale(request).ki.live_bild(kamera)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Standbild: {e}") from e
+    return Response(bild, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/geraet/sprache/{sid}")

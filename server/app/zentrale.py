@@ -546,6 +546,22 @@ class Zentrale:
             self.generator.neu_planen()
         self._zustand_geaendert()
 
+    async def _ki_ausloesen(self, a: Ausloeser, quelle: str) -> None:
+        if await self.ki.ansprechen(a.ziel, a.vol, quelle, a.hinweis) in ("niemand", "fehler"):
+            await self._ki_ersatz(a, f"{quelle} (Ersatz)")
+
+    async def _ki_ersatz(self, a: Ausloeser, quelle: str) -> bool:
+        """Ersatz eines KI-Auslösers: eigene Szene/Kategorie oder die Ersatz-Kategorie der KI-Einstellungen."""
+        if a.ersatz_typ == "szene" and a.ersatz_ziel:
+            try:
+                await self.szene_starten(a.ersatz_ziel, quelle)
+                return True
+            except KeyError:
+                self.protokollieren(f"{quelle}: Szene „{a.ersatz_ziel}“ gibt es nicht", "fehler")
+                return False
+        kat = a.ersatz_ziel or self.einst.ki.ersatz_kategorie
+        return bool(kat and await self.fx_kategorie(kat, a.vol, quelle=quelle))
+
     def ki_schalten(self, an: bool) -> None:
         self.zustand.ki_an = an
         self.speichern("zustand")
@@ -587,14 +603,12 @@ class Zentrale:
                 return False
         self._letzte_ausloesung[a.id] = jetzt
         if a.typ == "ki" and not self.zustand.ki_an:
-            # KI abgeschaltet: wie ein normaler Auslöser mit Sound aus der Ersatz-Kategorie
-            kat = self.einst.ki.ersatz_kategorie
-            return bool(kat and await self.fx_kategorie(kat, a.vol, quelle=quelle))
+            return await self._ki_ersatz(a, quelle)      # KI abgeschaltet: wie ein normaler Auslöser
         if a.typ == "ki":
             if self.ki.laeuft:
                 return False
             # läuft im Hintergrund (Bild + Modell + Stimme dauern Sekunden), HA-Verbindung nicht aufhalten
-            t = asyncio.create_task(self.ki.ansprechen(a.ziel, a.vol, quelle, a.hinweis), name="ki-stimme")
+            t = asyncio.create_task(self._ki_ausloesen(a, quelle), name="ki-stimme")
             self._ki_tasks.add(t)
             t.add_done_callback(self._ki_tasks.discard)
             return True

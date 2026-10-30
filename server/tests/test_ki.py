@@ -36,13 +36,15 @@ def test_wav_dauer():
 def client(monkeypatch):
     aufrufe = []
 
-    async def standbild(self, c, kamera):
+    async def standbild(self, c, kamera, breite=None):
         aufrufe.append(("bild", kamera))
         return b"jpeg"
 
     async def satz(self, c, bild, lage=""):
         aufrufe.append(("satz", lage))
-        return "Hey du da, kleines Skelett!" if self.z.einst.ki.zusatz != "leer" else "-"
+        if self.z.einst.ki.zusatz == "leer":
+            return "Leerer Weg mit Fahrradanhänger.", ""
+        return "Ein Kind als Skelett mitten auf dem Weg.", "Hey du da, kleines Skelett!"
 
     async def sprechen(self, c, text):
         aufrufe.append(("sprechen", text))
@@ -98,13 +100,18 @@ def test_ki_fehler_spielt_ersatz(client):
     try:
         client.put("/api/einstellungen/ki", json={"stimme": "kaputt"})
         r = client.post("/api/ki/test", json={"kamera": "camera.haustuer_tele"})
-        assert r.json() == {"gesagt": False}
+        assert r.json() == {"ergebnis": "fehler"}
         texte = [e["text"] for e in client.get("/api/status").json()["protokoll"]]
         assert any("KI nicht erreichbar (Sprach-Dienst: HTTP 500)" in t for t in texte)
         client.put("/api/einstellungen/ki", json={"stimme": "maedchen", "zusatz": "leer"})
-        assert client.post("/api/ki/test", json={"kamera": "camera.haustuer_tele"}).json() == {"gesagt": False}
+        assert client.post("/api/ki/test", json={"kamera": "camera.haustuer_tele"}).json() == {"ergebnis": "niemand"}
         texte = [e["text"] for e in client.get("/api/status").json()["protokoll"]]
-        assert any("niemand zu erkennen" in t for t in texte)
+        assert any("kein Mensch zu erkennen" in t for t in texte)
+        st = client.get("/api/ki/status").json()
+        assert [e["ergebnis"] for e in st["verlauf"]][:2] == ["niemand", "fehler"]
+        assert st["verlauf"][0]["beschreibung"] == "Leerer Weg mit Fahrradanhänger."
+        assert st["llm"]["ok"] is False and st["tts"]["ok"] is False      # http://ki:… gibt es im Test nicht
+        assert client.get("/api/ki/bild").content == b"jpeg"
     finally:
         ws.__exit__(None, None, None)
     assert client.post("/api/ki/test", json={"kamera": "kein-kamera"}).status_code == 422
@@ -116,7 +123,7 @@ def test_ki_ohne_neue_pi_software(client):
     try:
         ws.send_json({"t": "hallo", "rolle": "sound", "fw": "1.3.6", "plattform": "pi"})
         warte_auf(ws, "fx_sync")
-        assert client.post("/api/ki/test", json={"kamera": "camera.x_y"}).json() == {"gesagt": False}
+        assert client.post("/api/ki/test", json={"kamera": "camera.x_y"}).json() == {"ergebnis": "fehler"}
         texte = [e["text"] for e in client.get("/api/status").json()["protokoll"]]
         assert any("Pi-Software aktualisieren" in t for t in texte)
     finally:
@@ -145,3 +152,17 @@ def test_ki_aus_spielt_wie_bisher(client, ton):
         assert ("satz", "Noch weit weg – locke sie näher.") in client.aufrufe
     finally:
         ws.__exit__(None, None, None)
+
+
+def test_ki_ersatz_szene_je_ausloeser(client):
+    liste = client.get("/api/status").json()["einstellungen"]["ausloeser"]
+    liste.append({"name": "KI nah", "aktiv": True, "entity_id": "binary_sensor.klingel_person", "typ": "ki",
+                  "ziel": "camera.klingel", "ersatz_typ": "szene", "ersatz_ziel": "begruessung", "sperre_s": 0})
+    client.put("/api/ausloeser", json=liste)
+    aid = client.get("/api/status").json()["einstellungen"]["ausloeser"][-1]["id"]
+    client.post("/api/ki", json={"an": False})
+    assert client.post(f"/api/ausloeser/{aid}").json()["ausgeloest"] is True
+    st = client.get("/api/status").json()
+    assert st["szene"] is not None and st["szene"]["id"] == "begruessung"
+    assert client.get("/api/ki/live/kein_kamera").status_code == 404
+    assert client.get("/api/ki/live/camera.klingel").content == b"jpeg"

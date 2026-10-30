@@ -13,6 +13,7 @@ Das Standbild bleibt nur im Speicher und wird nirgends abgelegt.
 import asyncio
 import base64
 import collections
+import json
 import logging
 import re
 import secrets
@@ -43,7 +44,10 @@ SYSTEM = (
     "keine Namen. Schreibe nur den gesprochenen Satz: keine Emojis, keine Anführungszeichen, keine Regieanweisungen, "
     "keine Sternchen. Natürliche gesprochene Sprache, gern mit einer kurzen Pause (...). "
     "Sprich nur, wenn mindestens ein Mensch deutlich zu sehen ist – Fahrzeuge, Tiere, Gegenstände oder Deko "
-    "allein zählen nicht. Ist kein Mensch zu sehen, antworte nur mit einem einzelnen Minus: -\n"
+    "allein zählen nicht.\n"
+    "Antworte als JSON: {\"beschreibung\": sachliche Beschreibung in höchstens 25 Wörtern, was du siehst (Anzahl Personen, Kostüme bzw. "
+    "Kleidung, Gegenstände, wo im Bild sie stehen – nur Äußeres der Verkleidung, keine Körpermerkmale), "
+    "\"mensch\": true/false, \"satz\": der gesprochene Satz, leer wenn kein Mensch zu sehen ist}\n"
     "Beispiele für den Stil:\n"
     "Hey, kleines Skelett! Komm her... ich hab eine Überraschung für dich.\n"
     "Ihr drei Hexen da... eure Besen gehören jetzt mir.\n"
@@ -54,6 +58,7 @@ SYSTEM = (
 
 LETZTE = 6          # so viele Sätze merkt sie sich, um sich nicht zu wiederholen
 SPRACHE_HALTEN = 8  # so viele fertige WAVs hält der Server für den Pi bereit
+VERLAUF = 20        # so viele Einträge zeigt die KI-Zentrale
 
 
 class KiFehler(Exception):
@@ -69,12 +74,40 @@ def satz_bereinigen(text: str) -> str:
     return t[:200]
 
 
+ANTWORT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "beschreibung": {"type": "string"},
+        "mensch": {"type": "boolean"},
+        "satz": {"type": "string"},
+    },
+    "required": ["beschreibung", "mensch", "satz"],
+}
+
+
+def antwort_lesen(text: str) -> tuple[str, str]:
+    """JSON-Antwort des Modells -> (Beschreibung, Satz). Kommt kein JSON, gilt der Text als Satz."""
+    try:
+        d = json.loads(text)
+    except (ValueError, TypeError):
+        satz = satz_bereinigen(text)
+        return "", "" if satz == "-" else satz
+    if not isinstance(d, dict):
+        return "", ""
+    beschreibung = str(d.get("beschreibung") or "").strip()[:400]
+    satz = satz_bereinigen(str(d.get("satz") or "")) if d.get("mensch", True) else ""
+    return beschreibung, "" if satz == "-" else satz
+
+
 class KiStimme:
     def __init__(self, z: "Zentrale") -> None:
         self.z = z
         self.letzte: collections.deque[str] = collections.deque(maxlen=LETZTE)
         self.sprache: collections.OrderedDict[str, bytes] = collections.OrderedDict()
         self.laeuft = False
+        self.verlauf: collections.deque[dict] = collections.deque(maxlen=VERLAUF)
+        self.letztes_bild: bytes | None = None   # nur im Speicher, für die KI-Zentrale
+        self.letztes_bild_zeit = 0.0
 
     # ------------------------------------------------------------------
     def wav(self, sid: str) -> bytes | None:
@@ -88,18 +121,19 @@ class KiStimme:
         return sid
 
     # ------------------------------------------------------------------
-    async def _standbild(self, c: httpx.AsyncClient, kamera: str) -> bytes:
+    async def _standbild(self, c: httpx.AsyncClient, kamera: str, breite: int | None = None) -> bytes:
         ha = self.z.einst.homeassistant
         if not (ha.url and ha.token):
             raise KiFehler("Home Assistant ist nicht eingerichtet")
         r = await c.get(f"{ha.url.rstrip('/')}/api/camera_proxy/{kamera}",
-                        params={"width": self.z.einst.ki.bildbreite},
+                        params={"width": breite or self.z.einst.ki.bildbreite},
                         headers={"Authorization": f"Bearer {ha.token}"})
         if r.status_code != 200:
             raise KiFehler(f"Standbild {kamera}: HTTP {r.status_code}")
         return r.content
 
-    async def _satz(self, c: httpx.AsyncClient, bild: bytes, lage: str = "") -> str:
+    async def _satz(self, c: httpx.AsyncClient, bild: bytes, lage: str = "") -> tuple[str, str]:
+        """(Beschreibung, Satz) – Satz leer, wenn kein Mensch zu sehen ist."""
         k = self.z.einst.ki
         hinweis = [STUFEN.get(self.z.zustand.gruselstufe, STUFEN[2])]
         if lage.strip():
@@ -108,7 +142,7 @@ class KiStimme:
             hinweis.append(k.zusatz.strip())
         if self.letzte:
             hinweis.append("Sag etwas anderes als: " + " | ".join(self.letzte))
-        hinweis.append("Dein Satz:")
+        hinweis.append("Deine Antwort (JSON):")
         anfrage = {
             "messages": [
                 {"role": "system", "content": SYSTEM},
@@ -118,15 +152,16 @@ class KiStimme:
                     {"type": "text", "text": "\n".join(hinweis)},
                 ]},
             ],
-            "max_tokens": 60,
+            "max_tokens": 200,
             "temperature": 0.9,
+            "response_format": {"type": "json_schema", "json_schema": {"name": "antwort", "schema": ANTWORT_SCHEMA}},
         }
         if k.modell:
             anfrage["model"] = k.modell
         r = await c.post(f"{k.llm_url.rstrip('/')}/v1/chat/completions", json=anfrage)
         if r.status_code != 200:
             raise KiFehler(f"Sprachmodell: HTTP {r.status_code}")
-        return satz_bereinigen(r.json()["choices"][0]["message"]["content"])
+        return antwort_lesen(r.json()["choices"][0]["message"]["content"])
 
     async def _sprechen(self, c: httpx.AsyncClient, text: str) -> bytes:
         k = self.z.einst.ki
@@ -136,42 +171,84 @@ class KiStimme:
         return r.content
 
     # ------------------------------------------------------------------
-    async def ansprechen(self, kamera: str, vol: int = 100, quelle: str = "KI-Stimme", lage: str = "") -> bool:
-        """Kamera ansehen, Satz sprechen lassen. False = nichts gesagt (Ersatz-Sound läuft ggf.)."""
+    async def ansprechen(self, kamera: str, vol: int = 100, quelle: str = "KI-Stimme", lage: str = "") -> str:
+        """Kamera ansehen, Satz sprechen lassen.
+
+        Ergebnis: "gesagt", "niemand" (kein Mensch im Bild), "fehler" (KI weg, zu langsam …) oder "beschaeftigt".
+        Den Ersatz-Sound bei "niemand"/"fehler" spielt der Aufrufer (je Auslöser einstellbar).
+        """
         k = self.z.einst.ki
         if self.laeuft:
-            return False
+            return "beschaeftigt"
         self.laeuft = True
         t0 = time.monotonic()
-        zeiten: list[str] = []
+        eintrag: dict = {"zeit": time.time(), "quelle": quelle, "kamera": kamera, "satz": "", "beschreibung": "",
+                         "zeiten": {},
+                         "ergebnis": "fehler", "grund": ""}
+        zeiten = eintrag["zeiten"]
+        self._melden({"t": "ki", "laeuft": True, "quelle": quelle})
         try:
             if not (k.llm_url and k.tts_url):
                 raise KiFehler("Adressen für Sprachmodell/Sprach-Dienst fehlen")
             async with httpx.AsyncClient(timeout=k.zeitlimit_s) as c:
                 async with asyncio.timeout(k.zeitlimit_s):
                     bild = await self._standbild(c, kamera)
-                    zeiten.append(f"Bild {time.monotonic() - t0:.1f}")
-                    satz = await self._satz(c, bild, lage)
-                    zeiten.append(f"Text {time.monotonic() - t0:.1f}")
-                    if not satz or satz == "-" or len(satz) < 4:
-                        self.z.protokollieren(f"{quelle}: niemand zu erkennen", "info")
-                        return False
+                    zeiten["bild"] = round(time.monotonic() - t0, 1)
+                    self.letztes_bild, self.letztes_bild_zeit = bild, eintrag["zeit"]
+                    eintrag["beschreibung"], satz = await self._satz(c, bild, lage)
+                    zeiten["text"] = round(time.monotonic() - t0, 1)
+                    if len(satz) < 4:
+                        eintrag["ergebnis"] = "niemand"
+                        self.z.protokollieren(f"{quelle}: kein Mensch zu erkennen", "info")
+                        return "niemand"
+                    eintrag["satz"] = satz
                     wav = await self._sprechen(c, satz)
-                    zeiten.append(f"Stimme {time.monotonic() - t0:.1f}")
+                    zeiten["stimme"] = round(time.monotonic() - t0, 1)
             self.letzte.append(satz)
             await self._abspielen(wav, vol)
-            self.z.protokollieren(f"{quelle}: „{satz}“ ({', '.join(zeiten)} s)", "fx")
-            log.info("KI-Stimme %s: %s", ", ".join(zeiten), satz)
-            return True
-        except Exception as e:  # noqa: BLE001 – jeder Fehler -> Ersatz-Sound, Show läuft weiter
+            eintrag["ergebnis"] = "gesagt"
+            text = ", ".join(f"{n.capitalize()} {v}" for n, v in zeiten.items())
+            self.z.protokollieren(f"{quelle}: „{satz}“ ({text} s)", "fx")
+            log.info("KI-Stimme %s: %s", text, satz)
+            return "gesagt"
+        except Exception as e:  # noqa: BLE001 – jeder Fehler -> Ersatz, Show läuft weiter
             grund = "zu langsam" if isinstance(e, TimeoutError) else str(e) or type(e).__name__
-            self.z.protokollieren(f"{quelle}: KI nicht erreichbar ({grund}) – Ersatz-Sound", "fehler")
+            eintrag["grund"] = grund
+            self.z.protokollieren(f"{quelle}: KI nicht erreichbar ({grund})", "fehler")
             log.warning("KI-Stimme: %s", grund)
-            if k.ersatz_kategorie:
-                await self.z.fx_kategorie(k.ersatz_kategorie, vol, quelle=f"{quelle} (Ersatz)")
-            return False
+            return "fehler"
         finally:
             self.laeuft = False
+            self.verlauf.appendleft(eintrag)
+            self._melden({"t": "ki", "laeuft": False, "eintrag": eintrag})
+
+    def _melden(self, nachricht: dict) -> None:
+        self.z.an_ui(nachricht)
+
+    async def dienste(self) -> dict:
+        """Erreichbarkeit von Sprachmodell und Sprach-Dienst (für die KI-Zentrale)."""
+        k = self.z.einst.ki
+
+        async def frage(url: str) -> dict:
+            if not url:
+                return {"ok": False, "text": "keine Adresse"}
+            try:
+                async with httpx.AsyncClient(timeout=2) as c:
+                    r = await c.get(url)
+                return {"ok": r.status_code == 200, "text": "erreichbar" if r.status_code == 200 else f"HTTP {r.status_code}",
+                        "daten": r.json() if r.status_code == 200 else None}
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "text": type(e).__name__}
+
+        llm, tts = await asyncio.gather(frage(k.llm_url and f"{k.llm_url.rstrip('/')}/health"),
+                                        frage(k.tts_url and f"{k.tts_url.rstrip('/')}/gesund"))
+        tts["stimmen"] = (tts.pop("daten", None) or {}).get("stimmen", [])
+        llm.pop("daten", None)
+        return {"llm": llm, "tts": tts}
+
+    async def live_bild(self, kamera: str, breite: int = 640) -> bytes:
+        async with httpx.AsyncClient(timeout=5) as c:
+            return await self._standbild(c, kamera, breite)
 
     async def _abspielen(self, wav: bytes, vol: int) -> None:
         sound = self.z.geraete.get("sound")

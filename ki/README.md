@@ -28,8 +28,14 @@ einen Sound aus der Ersatz-Kategorie – die Show läuft ohne KI weiter wie vorh
 4. Dienste: `systemd/*.service` nach `~/.config/systemd/user/` kopieren, Pfade prüfen, dann
    `systemctl --user daemon-reload && systemctl --user enable --now spuk-llm spuk-stimme`.
 5. Firewall: Ports 8091–8092 für das LAN öffnen (z. B. `sudo ufw allow from 192.168.1.0/24 to any port 8091:8092 proto tcp`).
-6. Oberfläche → Einstellungen → 🤖 KI-Stimme: Adressen eintragen; unter Auslöser einen Auslöser vom Typ
-   „KI-Stimme spricht an“ mit Personensensor und Kamera (`camera.…`) anlegen.
+6. Oberfläche → Reiter 🤖 KI → Einstellungen der KI: Adressen eintragen; unter Einstellungen → Auslöser einen
+   Auslöser vom Typ „KI-Stimme spricht an“ mit Personensensor, Kamera (`camera.…`), Lage-Hinweis und Ersatz anlegen.
+
+## KI-Zentrale (Reiter 🤖 KI)
+
+Schalter, Erreichbarkeit der Dienste, die KI-Auslöser, die letzte Erkennung (Bild, was die KI sieht, was sie
+gesagt hat, Zeiten), ein Live-Bild (Standbild alle 2 s, nur solange die Seite offen ist) und der Verlauf.
+Das Modell antwortet als JSON mit Beschreibung und Satz.
 
 Test ohne Server: `curl -X POST localhost:8092/sprechen -H 'Content-Type: application/json'
 -d '{"text":"Komm näher.","stimme":"daemon"}' -o test.wav`

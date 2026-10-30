@@ -23,6 +23,9 @@ let haKameras = null;      // Kameras aus Home Assistant (für die KI-Stimme)
 let entwurf = null;        // Szene im Editor
 let regelEntwurf = null;   // Ereignis-Regeln im Editor
 let ausloeserEntwurf = null; // Auslöser im Editor
+let kiStatus = { laeuft: false, verlauf: [], llm: null, tts: null }; // KI-Zentrale
+let kiBildStand = 0;          // erzwingt neues „letztes Bild“
+let kiLive = "";              // Kamera im Live-Bild (leer = aus)
 const offeneDetails = new Set(["e-zeitplan"]);
 const vorhoerer = new Audio();
 
@@ -96,6 +99,7 @@ function empfangen(m) {
       S = m;
       posStand = Date.now();
       aktualisieren(["zustand", "geraete", "medien", "daten", "protokoll"]);
+      if (seite === "ki") kiLaden();
       break;
     case "zustand":
       Object.assign(S, m);
@@ -113,6 +117,15 @@ function empfangen(m) {
     case "medien":
       Object.assign(S.medien, m);
       aktualisieren(["medien"]);
+      break;
+    case "ki":
+      kiStatus.laeuft = m.laeuft;
+      if (m.eintrag) {
+        kiStatus.verlauf.unshift(m.eintrag);
+        kiStatus.verlauf.length = Math.min(kiStatus.verlauf.length, 20);
+        kiBildStand = Date.now();
+      }
+      aktualisieren(["ki"]);
       break;
     case "log":
       S.protokoll.unshift(m);
@@ -177,6 +190,7 @@ function zeigeSeite(name) {
   for (const s of $$(".seite")) s.hidden = s.id !== `seite-${name}`;
   for (const k of $$("#reiter button")) k.classList.toggle("aktiv", k.dataset.seite === name);
   for (const b of BEREICHE) if (b.seite === name && b.veraltet) zeichne(b);
+  if (name === "ki" && S) kiLaden();
   window.scrollTo(0, 0);
   try { localStorage.setItem("spuk-seite", name); } catch { /* egal */ }
 }
@@ -726,6 +740,10 @@ function ausloeserZeile(a, i) {
         <label class="feld"><span>Was passiert</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="typ">${optionen([["szene", "Szene"], ["kategorie", "Sound aus Kategorie"], ["ki", "🤖 KI-Stimme spricht an"]], a.typ)}</select></label>
         ${zielFeld}
       </div>
+      ${a.typ === "ki" ? `<div class="feldreihe">
+        <label class="feld"><span>Ersatz (KI aus / kein Mensch / Fehler)</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="ersatz_typ">${optionen([["kategorie", "Sound aus Kategorie"], ["szene", "Szene"]], a.ersatz_typ || "kategorie")}</select></label>
+        <label class="feld"><span>${a.ersatz_typ === "szene" ? "Szene" : "Kategorie"}</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="ersatz_ziel">${optionen(a.ersatz_typ === "szene" ? S.szenen.map((s) => [s.id, s.name]) : [["", "wie in den KI-Einstellungen"], ...kategorien()], a.ersatz_ziel || "")}</select></label>
+      </div>` : ""}
       ${a.typ === "ki" ? `<label class="feld"><span>Lage für die KI (optional)</span><input type="text" maxlength="300" value="${esc(a.hinweis || "")}" placeholder="z. B. Die Leute sind noch weit weg auf dem Weg – locke sie näher." data-aenderung="ausloeser" data-i="${i}" data-feld="hinweis"></label>` : ""}
       <div class="feldreihe">
         <label class="feld"><span>Sperrzeit danach (s)</span><input type="number" min="0" max="3600" value="${a.sperre_s}" data-aenderung="ausloeser" data-i="${i}" data-feld="sperre_s"></label>
@@ -765,7 +783,7 @@ bereich("einst-ausloeser", "einstellungen", ["daten", "zustand"], () => {
 
 bereich("einst-allgemein", "einstellungen", ["daten", "zustand"], () => {
   const e = S.einstellungen;
-  const zp = e.zeitplan, rz = e.ruhezeit, gr = e.grusel, ha = e.homeassistant, mq = e.mqtt, so = e.standort, ki = e.ki;
+  const zp = e.zeitplan, rz = e.ruhezeit, gr = e.grusel, ha = e.homeassistant, mq = e.mqtt, so = e.standort;
   const statusMarke = (t) => `<span class="marke ${String(t).startsWith("verbunden") ? "orange" : ""}">${esc(t)}</span>`;
   return [
     abschnitt("e-zeitplan", "⏰ Zeitplan", "zeitplan", `
@@ -790,23 +808,6 @@ bereich("einst-allgemein", "einstellungen", ["daten", "zustand"], () => {
       ${feld("url", "Adresse", "url", ha.url, 'placeholder="http://192.168.1.20:8123"')}
       ${feld("token", "Langzeit-Zugriffstoken", "password", ha.token, 'autocomplete="off"')}
       <p class="hinweis">Token anlegen: Home Assistant → Profil → Sicherheit → Langlebige Zugangstoken. Wird für die Auslöser gebraucht.</p>`, statusMarke(S.ha)),
-    abschnitt("e-ki", "🤖 KI-Stimme", "ki", `
-      <p class="hinweis">Sieht sich bei einem KI-Auslöser das Kamerabild an und spricht die Besucher passend an
-        (Kostüm, Gegenstände, Gruppe). Braucht ein Bild-Sprachmodell mit OpenAI-kompatibler API (z. B. llama-server mit
-        Gemma 3) und den Sprach-Dienst <code>ki/stimme.py</code>. Das Bild wird nicht gespeichert.</p>
-      <div class="feldreihe">${feld("llm_url", "Sprachmodell (Adresse)", "url", ki.llm_url, 'placeholder="http://192.168.1.50:8091"')}${feld("modell", "Modell (leer = geladenes)", "text", ki.modell)}</div>
-      <div class="feldreihe">${feld("tts_url", "Sprach-Dienst (Adresse)", "url", ki.tts_url, 'placeholder="http://192.168.1.50:8092"')}${auswahl("stimme", "Stimme", [["maedchen", "Geistermädchen"], ["daemon", "Dämon"]], ki.stimme)}</div>
-      <label class="feld"><span>Eigene Vorgaben fürs Modell (optional)</span><textarea name="zusatz" rows="2" maxlength="500" placeholder="z. B. Erwähne die Spukzentrale. Sprich Kinder besonders freundlich an.">${esc(ki.zusatz)}</textarea></label>
-      <div class="feldreihe">
-        ${feld("vol", "Lautstärke %", "number", ki.vol, 'min="0" max="100"')}
-        ${feld("zeitlimit_s", "Zeitlimit (s)", "number", ki.zeitlimit_s, 'min="2" max="60" step="0.5"')}
-        ${auswahl("ersatz_kategorie", "Wenn die KI nicht kann", [["", "nichts abspielen"], ...kategorien()], ki.ersatz_kategorie)}
-      </div>
-      <div class="knopfreihe">
-        <input type="text" list="ha-kameras" id="ki-test-kamera" placeholder="camera.… (Auslöser → Sensoren laden)" style="flex:1">
-        <button type="button" class="klein lila" data-aktion="ki-test">🤖 Jetzt ansprechen</button>
-      </div>
-      <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`),
     abschnitt("e-mqtt", "📡 MQTT", "mqtt", `
       ${kasten("aktiv", "MQTT aktiv", mq.aktiv, "Gerät „Spukzentrale“ erscheint automatisch in Home Assistant")}
       <div class="feldreihe">${feld("host", "Broker", "text", mq.host, 'placeholder="192.168.1.30"')}${feld("port", "Port", "number", mq.port, 'min="1" max="65535"')}</div>
@@ -1352,14 +1353,19 @@ const AKTIONEN = {
     [haSensoren, haKameras] = await Promise.all([api("GET", "/api/ha/sensoren"), api("GET", "/api/ha/sensoren?domain=camera")]);
     toast(`${haSensoren.length} Sensoren und ${haKameras.length} Kameras gefunden`);
     zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
+    zeichne(BEREICHE.find((b) => b.id === "ki-live"));
   },
   "ki-test": async () => {
-    const kamera = document.getElementById("ki-test-kamera")?.value.trim()
-      || ausloeserEntwurf?.find((a) => a.typ === "ki")?.ziel || S.einstellungen.ausloeser.find((a) => a.typ === "ki")?.ziel;
-    if (!kamera) return toast("Erst eine Kamera eintragen (camera.…)");
+    const kamera = document.getElementById("ki-kamera")?.value;
+    if (!kamera) return toast("Erst eine Kamera wählen (Kameras aus HA laden)");
+    const a = kiAusloeser().find((x) => x.ziel === kamera);
     toast("KI sieht hin …");
-    const r = await api("POST", "/api/ki/test", { kamera });
-    toast(r.gesagt ? "Gesagt – Text steht im Protokoll" : "Nichts gesagt – Grund steht im Protokoll");
+    const r = await api("POST", "/api/ki/test", { kamera, hinweis: a?.hinweis || "" });
+    toast({ gesagt: "Gesagt", niemand: "Kein Mensch zu sehen", fehler: "Fehler – siehe Verlauf" }[r.ergebnis] || r.ergebnis);
+  },
+  "ki-live": () => {
+    kiLive = kiLive ? "" : document.getElementById("ki-kamera")?.value || "";
+    zeichne(BEREICHE.find((b) => b.id === "ki-live"));
   },
   "ausloeser-neu": () => {
     ausloeserEntwurf.push({ id: "", name: "Neuer Auslöser", aktiv: true, entity_id: "", typ: "kategorie", ziel: "schrei", hinweis: "", vol: 100, sperre_s: 60, gruselstufe_min: 1, nur_wenn_an: true });
@@ -1483,18 +1489,131 @@ function aendern(el, live) {
         a.ziel = wert === "kategorie" ? "schrei" : wert === "ki" ? "" : S.szenen[0]?.id ?? "";
         zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
       }
+      if (el.dataset.feld === "ersatz_typ") {
+        a.ersatz_ziel = wert === "szene" ? S.szenen[0]?.id ?? "" : "";
+        zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
+      }
       return;
     }
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Seite: KI
+// ---------------------------------------------------------------------------
+const kiAusloeser = () => S.einstellungen.ausloeser.filter((a) => a.typ === "ki");
+const kiKameras = () => [...new Set([...kiAusloeser().map((a) => a.ziel).filter(Boolean), ...(haKameras || []).map((k) => k.entity_id)])];
+const KI_ERGEBNIS = { gesagt: ["gesagt", "orange"], niemand: ["kein Mensch", ""], fehler: ["Fehler", "rot"], beschaeftigt: ["besetzt", ""] };
+
+async function kiLaden() {
+  try {
+    kiStatus = await api("GET", "/api/ki/status");
+    aktualisieren(["ki"]);
+  } catch { /* Toast kommt von api() */ }
+}
+setInterval(() => { if (seite === "ki" && !document.hidden) kiLaden(); }, 10000);
+setInterval(() => {
+  const img = document.getElementById("ki-live-bild");
+  if (seite === "ki" && kiLive && img && !document.hidden) img.src = `/api/ki/live/${kiLive}?t=${Date.now()}`;
+}, 2000);
+
+bereich("ki-kopf", "ki", ["ki", "zustand", "daten"], () => {
+  const z = S.zustand;
+  const dienst = (d, name) => d ? `<span class="marke ${d.ok ? "orange" : "rot"}">${name}: ${esc(d.text)}</span>` : `<span class="marke">${name}: …</span>`;
+  return `
+    <div class="karte">
+      <h2>🤖 KI-Zentrale</h2>
+      <div class="schalter-zeile" style="padding-top:0">
+        <div>KI-Stimme<small>${z.ki_an ? "spricht Besucher an, die die Kameras sehen" : "aus – KI-Auslöser spielen ihren Ersatz"}</small></div>
+        ${schalter("ki", z.ki_an)}
+      </div>
+      <div class="knopfreihe" style="flex-wrap:wrap;gap:6px">
+        ${dienst(kiStatus.llm, "Sprachmodell")} ${dienst(kiStatus.tts, "Stimme")}
+        ${kiStatus.laeuft ? '<span class="marke lila">denkt gerade nach …</span>' : ""}
+      </div>
+      <h3>Auslöser</h3>
+      <ul class="protokoll">
+        ${kiAusloeser().map((a) => `<li><time>${a.aktiv ? "aktiv" : "aus"}</time><span><b>${esc(a.name)}</b> · ${esc(a.entity_id || "kein Sensor")} → ${esc(a.ziel || "keine Kamera")}${a.hinweis ? `<br><small>${esc(a.hinweis)}</small>` : ""}</span></li>`).join("") || '<li class="leer">Noch kein KI-Auslöser – unter Einstellungen → Auslöser anlegen.</li>'}
+      </ul>
+    </div>`;
+});
+
+bereich("ki-erkennung", "ki", ["ki"], () => {
+  const e = kiStatus.verlauf[0];
+  if (!e) return `<div class="karte"><h2>Letzte Erkennung</h2><p class="hinweis">Noch nichts erkannt.</p></div>`;
+  const [text, farbe] = KI_ERGEBNIS[e.ergebnis] || [e.ergebnis, ""];
+  const zeiten = Object.entries(e.zeiten || {}).map(([n, v]) => `${n} ${v} s`).join(" · ");
+  return `
+    <div class="karte">
+      <h2>Letzte Erkennung <span class="marke ${farbe}">${text}</span></h2>
+      ${kiStatus.bild_zeit || kiBildStand ? `<img class="ki-bild" src="/api/ki/bild?t=${kiBildStand || kiStatus.bild_zeit}" alt="Was die KI gesehen hat">` : ""}
+      <p class="hinweis">${zeit(e.zeit)} · ${esc(e.quelle)} · ${esc(e.kamera)}</p>
+      <h3>Was sie sieht</h3>
+      <p>${esc(e.beschreibung || "–")}</p>
+      <h3>Was sie gesagt hat</h3>
+      <p class="ki-satz">${e.satz ? `„${esc(e.satz)}“` : "–"}</p>
+      ${e.grund ? `<p class="hinweis warnung">${esc(e.grund)}</p>` : ""}
+      ${zeiten ? `<p class="hinweis">Zeiten ab Auslöser: ${esc(zeiten)}</p>` : ""}
+    </div>`;
+});
+
+bereich("ki-live", "ki", ["ki", "daten"], () => {
+  const kameras = kiKameras();
+  const gewaehlt = kiLive || kameras[0] || "";
+  return `
+    <div class="karte">
+      <h2>Kamera</h2>
+      <div class="feldreihe">
+        <label class="feld"><span>Kamera</span><select id="ki-kamera">${optionen(kameras.map((k) => [k, k]), gewaehlt)}</select></label>
+      </div>
+      <div class="knopfreihe">
+        <button type="button" class="klein" data-aktion="ki-live">${kiLive ? "⏸ Live-Bild aus" : "▶️ Live-Bild (alle 2 s)"}</button>
+        <button type="button" class="klein lila" data-aktion="ki-test">🤖 Jetzt ansprechen</button>
+        <button type="button" class="klein" data-aktion="ha-sensoren">Kameras aus HA laden</button>
+      </div>
+      ${kiLive ? `<img class="ki-bild" id="ki-live-bild" src="/api/ki/live/${esc(kiLive)}?t=${Date.now()}" alt="Live-Bild">` : ""}
+      <p class="hinweis">Das Live-Bild holt nur Standbilder, solange diese Seite offen ist – die Kamera merkt davon praktisch nichts.</p>
+    </div>`;
+});
+
+bereich("ki-verlauf", "ki", ["ki"], () => `
+  <div class="karte">
+    <h2>Verlauf</h2>
+    <ul class="protokoll">
+      ${kiStatus.verlauf.map((e) => {
+        const [text] = KI_ERGEBNIS[e.ergebnis] || [e.ergebnis];
+        return `<li class="${e.ergebnis === "fehler" ? "fehler" : ""}"><time>${zeit(e.zeit)}</time><span><b>${esc(e.quelle)}</b> · ${text}${e.satz ? ` · „${esc(e.satz)}“` : ""}${e.beschreibung ? `<br><small>${esc(e.beschreibung)}</small>` : ""}${e.grund ? `<br><small>${esc(e.grund)}</small>` : ""}</span></li>`;
+      }).join("") || '<li class="leer">Noch nichts.</li>'}
+    </ul>
+  </div>`);
+
+bereich("ki-einstellungen", "ki", ["daten"], () => {
+  const ki = S.einstellungen.ki;
+  return [
+    abschnitt("e-ki", "⚙️ Einstellungen der KI", "ki", `
+      <p class="hinweis">Sieht sich bei einem KI-Auslöser das Kamerabild an und spricht die Besucher passend an
+        (Kostüm, Gegenstände, Gruppe). Braucht ein Bild-Sprachmodell mit OpenAI-kompatibler API (z. B. llama-server mit
+        Gemma 3) und den Sprach-Dienst <code>ki/stimme.py</code>. Das Bild wird nicht gespeichert.</p>
+      <div class="feldreihe">${feld("llm_url", "Sprachmodell (Adresse)", "url", ki.llm_url, 'placeholder="http://192.168.1.50:8091"')}${feld("modell", "Modell (leer = geladenes)", "text", ki.modell)}</div>
+      <div class="feldreihe">${feld("tts_url", "Sprach-Dienst (Adresse)", "url", ki.tts_url, 'placeholder="http://192.168.1.50:8092"')}${auswahl("stimme", "Stimme", [["maedchen", "Geistermädchen"], ["daemon", "Dämon"]], ki.stimme)}</div>
+      <label class="feld"><span>Eigene Vorgaben fürs Modell (optional)</span><textarea name="zusatz" rows="2" maxlength="500" placeholder="z. B. Erwähne die Spukzentrale. Sprich Kinder besonders freundlich an.">${esc(ki.zusatz)}</textarea></label>
+      <div class="feldreihe">
+        ${feld("vol", "Lautstärke %", "number", ki.vol, 'min="0" max="100"')}
+        ${feld("zeitlimit_s", "Zeitlimit (s)", "number", ki.zeitlimit_s, 'min="2" max="60" step="0.5"')}
+        ${auswahl("ersatz_kategorie", "Wenn die KI nicht kann", [["", "nichts abspielen"], ...kategorien()], ki.ersatz_kategorie)}
+      </div>
+      <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`)
+  ].join("");
+});
+
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
-for (const name of ["show", "licht", "sounds", "szenen", "einstellungen"]) {
+for (const name of ["show", "licht", "sounds", "szenen", "ki", "einstellungen"]) {
   $(`#seite-${name}`).innerHTML = BEREICHE.filter((b) => b.seite === name).map((b) => `<div id="${b.id}"></div>`).join("");
 }
 let gemerkt = "show";
 try { gemerkt = localStorage.getItem("spuk-seite") || "show"; } catch { /* egal */ }
-zeigeSeite(["show", "licht", "sounds", "szenen", "einstellungen"].includes(gemerkt) ? gemerkt : "show");
+zeigeSeite(["show", "licht", "sounds", "szenen", "ki", "einstellungen"].includes(gemerkt) ? gemerkt : "show");
 verbinden();
