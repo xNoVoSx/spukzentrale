@@ -1,0 +1,15 @@
+# Sprach-Dienst der KI-Stimme (Benutzer-Dienst): ~/.config/systemd/user/
+# Pfade anpassen: venv mit chatterbox-tts, fastapi, uvicorn; SPUK_VORLAGEN = Ordner mit den Stimmvorlagen (*.wav)
+[Unit]
+Description=Spukzentrale – Sprach-Dienst (Chatterbox)
+After=network-online.target
+
+[Service]
+Environment=SPUK_VORLAGEN=%h/Projekte/spukzentrale/ki-stimme/vorlagen
+Environment=SPUK_PORT=8092
+ExecStart=%h/Projekte/spukzentrale/.venv-tts/bin/python %h/Projekte/spukzentrale/spukzentrale/ki/stimme.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

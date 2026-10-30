@@ -92,6 +92,7 @@ class Zustand(BaseModel):
     licht: LichtZustand = Field(default_factory=LichtZustand)
     ambiente_an: bool = False
     ereignisse_an: bool = False
+    ki_an: bool = True             # KI-Stimme; aus = KI-Auslöser spielen ihren Ersatz-Sound
     gruselstufe: int = Field(2, ge=1, le=3)
     stimmung_id: str | None = None
 
@@ -288,8 +289,9 @@ class Ausloeser(BaseModel):
     name: str = Field("Auslöser", min_length=1, max_length=40)
     aktiv: bool = False
     entity_id: str = ""
-    typ: Literal["szene", "kategorie"] = "szene"
-    ziel: str = "schreck"          # Szenen-ID oder Kategorie
+    typ: Literal["szene", "kategorie", "ki"] = "szene"
+    ziel: str = "schreck"          # Szenen-ID, Kategorie bzw. bei "ki" die Kamera (camera.…)
+    hinweis: str = Field("", max_length=300)  # nur "ki": Lage für das Modell (z. B. „noch weit weg“)
     vol: int = Field(100, ge=0, le=100)
     sperre_s: int = Field(60, ge=0, le=3600)
     gruselstufe_min: int = Field(1, ge=1, le=3)
@@ -328,6 +330,19 @@ class HomeAssistant(BaseModel):
     token: str = ""   # Langzeit-Zugriffstoken
 
 
+class KiEinst(BaseModel):
+    """KI-Stimme: Bild-Sprachmodell (OpenAI-kompatibel, z. B. llama-server) + Sprach-Dienst (ki/stimme.py)."""
+    llm_url: str = ""           # z. B. http://192.168.1.50:8091
+    modell: str = ""            # leer = was der Server geladen hat
+    tts_url: str = ""           # z. B. http://192.168.1.50:8092
+    stimme: str = "maedchen"
+    vol: int = Field(100, ge=0, le=100)
+    zusatz: str = Field("", max_length=500)   # eigene Vorgaben fürs Modell
+    zeitlimit_s: float = Field(10.0, ge=2, le=60)
+    bildbreite: int = Field(896, ge=256, le=2048)
+    ersatz_kategorie: str = "stimme"          # leer = bei Fehlern nichts abspielen
+
+
 class Mqtt(BaseModel):
     aktiv: bool = False
     host: str = ""
@@ -358,6 +373,7 @@ class Einstellungen(BaseModel):
     ausloeser: list[Ausloeser] = Field(default_factory=_standard_ausloeser, max_length=20)
     aufbau: Aufbau = Field(default_factory=Aufbau)
     homeassistant: HomeAssistant = Field(default_factory=HomeAssistant)
+    ki: KiEinst = Field(default_factory=KiEinst)
     mqtt: Mqtt = Field(default_factory=Mqtt)
     musik: MusikAbstimmung = Field(default_factory=MusikAbstimmung)
 

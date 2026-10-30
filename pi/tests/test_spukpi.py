@@ -229,3 +229,28 @@ def test_limiter():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])
+
+
+def test_mischer_spielt_ki_ansage_mit_licht(tmp_path):
+    amb = Ambiente("http://test", tmp_path, 15)
+    licht = _Licht()
+    m = Mischer("null", amb, _Effekte(), licht)
+    m.latenz_ms = 0
+    m.konfigurieren({"master": 100, "fx_vol": 100, "latenz_ms": 0})
+    ansage = np.full(RATE, 0.5, np.float32)
+    m.klang_start("sag", ansage, 100, {"name": "env_puls", "dauer_ms": 1300, "staerke": 60})
+    pcm = np.frombuffer(m._block(), np.int16)
+    assert pcm.max() > 10000                                     # Ansage ist zu hören
+    assert any(d[2] == protokoll.MSG_AKTION for d in licht.daten)  # Licht startet mit dem ersten Ton
+    for _ in range(105):
+        m._block()
+    assert not m.stimmen                                         # nach 1 s fertig und weg
+
+
+def test_ansage_dekodieren(tmp_path):
+    import subprocess
+    from spukpi.effekte import dekodieren
+    wav = tmp_path / "a.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=0.5", "-ar", "22050", str(wav)], check=True)
+    k = dekodieren(str(wav))
+    assert k.dtype == np.float32 and abs(len(k) - RATE // 2) < 200

@@ -1,0 +1,13 @@
+# Bild-Sprachmodell für die KI-Stimme (Benutzer-Dienst): ~/.config/systemd/user/
+# llama.cpp (llama-server) mit Gemma 3 12B inkl. Bild-Teil, komplett auf der GPU
+[Unit]
+Description=Spukzentrale – Sprachmodell (llama-server, Gemma 3 12B)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/llama-server -hf ggml-org/gemma-3-12b-it-GGUF -ngl 99 -c 8192 --host 0.0.0.0 --port 8091
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -19,6 +19,7 @@ let seite = "show";
 let werte = [];            // Live-Werte der Zonen (0..100)
 let letzteWerte = 0;       // Zeitpunkt der letzten Werte
 let haSensoren = null;     // Auswahlliste aus Home Assistant
+let haKameras = null;      // Kameras aus Home Assistant (für die KI-Stimme)
 let entwurf = null;        // Szene im Editor
 let regelEntwurf = null;   // Ereignis-Regeln im Editor
 let ausloeserEntwurf = null; // Auslöser im Editor
@@ -342,6 +343,11 @@ bereich("show-steuerung", "show", ["zustand", "daten"], () => {
         <div>Zufallsereignisse<small>Donner, Gelächter, Schreie … in zufälligen Abständen</small></div>
         ${schalter("ereignisse", z.ereignisse_an)}
       </div>
+      ${S.einstellungen.ausloeser.some((a) => a.typ === "ki" && a.aktiv) ? `
+      <div class="schalter-zeile">
+        <div>KI-Stimme<small>${z.ki_an ? "spricht Besucher an, die die Kameras sehen" : "aus – Kameras lösen normale Stimmen-Sounds aus"}</small></div>
+        ${schalter("ki", z.ki_an)}
+      </div>` : ""}
       <h3 style="margin-top:12px">Gruselstufe ${auto ? '<span class="marke lila">automatisch nach Uhrzeit</span>' : ""}</h3>
       <div class="segmente">
         ${[[1, "1 · Kinder"], [2, "2 · Gruselig"], [3, "3 · Schreck"]].map(([n, t]) =>
@@ -705,6 +711,9 @@ function abschnitt(id, titel, teil, inhalt, marke = "") {
 
 function ausloeserZeile(a, i) {
   const ziele = a.typ === "kategorie" ? kategorien() : S.szenen.map((s) => [s.id, s.name]);
+  const zielFeld = a.typ === "ki"
+    ? `<label class="feld"><span>Kamera (Standbild)</span><input type="text" list="ha-kameras" value="${esc(a.ziel)}" placeholder="camera.…" data-aenderung="ausloeser" data-i="${i}" data-feld="ziel"></label>`
+    : `<label class="feld"><span>${a.typ === "szene" ? "Szene" : "Kategorie"}</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="ziel">${optionen(ziele, a.ziel)}</select></label>`;
   return `
     <div class="schritt">
       <div class="schalter-zeile" style="padding-top:0">
@@ -714,13 +723,14 @@ function ausloeserZeile(a, i) {
       <label class="feld"><span>Sensor in Home Assistant</span>
         <input type="text" list="ha-liste" value="${esc(a.entity_id)}" placeholder="binary_sensor.…" data-aenderung="ausloeser" data-i="${i}" data-feld="entity_id"></label>
       <div class="feldreihe">
-        <label class="feld"><span>Was passiert</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="typ">${optionen([["szene", "Szene"], ["kategorie", "Sound aus Kategorie"]], a.typ)}</select></label>
-        <label class="feld"><span>${a.typ === "szene" ? "Szene" : "Kategorie"}</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="ziel">${optionen(ziele, a.ziel)}</select></label>
+        <label class="feld"><span>Was passiert</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="typ">${optionen([["szene", "Szene"], ["kategorie", "Sound aus Kategorie"], ["ki", "🤖 KI-Stimme spricht an"]], a.typ)}</select></label>
+        ${zielFeld}
       </div>
+      ${a.typ === "ki" ? `<label class="feld"><span>Lage für die KI (optional)</span><input type="text" maxlength="300" value="${esc(a.hinweis || "")}" placeholder="z. B. Die Leute sind noch weit weg auf dem Weg – locke sie näher." data-aenderung="ausloeser" data-i="${i}" data-feld="hinweis"></label>` : ""}
       <div class="feldreihe">
         <label class="feld"><span>Sperrzeit danach (s)</span><input type="number" min="0" max="3600" value="${a.sperre_s}" data-aenderung="ausloeser" data-i="${i}" data-feld="sperre_s"></label>
         <label class="feld"><span>Ab Gruselstufe</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="gruselstufe_min" data-typ="zahl">${optionen([[1, "1"], [2, "2"], [3, "3"]], a.gruselstufe_min)}</select></label>
-        ${a.typ === "kategorie" ? `<label class="feld"><span>Lautstärke %</span><input type="number" min="0" max="100" value="${a.vol}" data-aenderung="ausloeser" data-i="${i}" data-feld="vol"></label>` : ""}
+        ${a.typ !== "szene" ? `<label class="feld"><span>Lautstärke %</span><input type="number" min="0" max="100" value="${a.vol}" data-aenderung="ausloeser" data-i="${i}" data-feld="vol"></label>` : ""}
       </div>
       <div class="schalter-zeile"><div>Nur wenn die Show läuft</div>${schalter("ausloeser", a.nur_wenn_an, `data-i="${i}" data-feld="nur_wenn_an"`)}</div>
       <div class="knopfreihe">
@@ -740,6 +750,7 @@ bereich("einst-ausloeser", "einstellungen", ["daten", "zustand"], () => {
         <p class="hinweis">Ein Sensor aus Home Assistant (z. B. Reolink: <code>…_visitor</code> = Klingel gedrückt,
           <code>…_person</code> = Person erkannt) startet eine Szene oder einen Sound. Home Assistant muss unten eingerichtet sein.</p>
         <datalist id="ha-liste">${liste.map((x) => `<option value="${esc(x.entity_id)}">${esc(x.name)}</option>`).join("")}</datalist>
+        <datalist id="ha-kameras">${(haKameras || []).map((x) => `<option value="${esc(x.entity_id)}">${esc(x.name)}</option>`).join("")}</datalist>
         <button type="button" class="klein" data-aktion="ha-sensoren">Sensoren aus Home Assistant laden</button>
         <div style="margin-top:10px">${ausloeserEntwurf.map(ausloeserZeile).join("")}</div>
         <div class="knopfreihe">
@@ -754,7 +765,7 @@ bereich("einst-ausloeser", "einstellungen", ["daten", "zustand"], () => {
 
 bereich("einst-allgemein", "einstellungen", ["daten", "zustand"], () => {
   const e = S.einstellungen;
-  const zp = e.zeitplan, rz = e.ruhezeit, gr = e.grusel, ha = e.homeassistant, mq = e.mqtt, so = e.standort;
+  const zp = e.zeitplan, rz = e.ruhezeit, gr = e.grusel, ha = e.homeassistant, mq = e.mqtt, so = e.standort, ki = e.ki;
   const statusMarke = (t) => `<span class="marke ${String(t).startsWith("verbunden") ? "orange" : ""}">${esc(t)}</span>`;
   return [
     abschnitt("e-zeitplan", "⏰ Zeitplan", "zeitplan", `
@@ -779,6 +790,23 @@ bereich("einst-allgemein", "einstellungen", ["daten", "zustand"], () => {
       ${feld("url", "Adresse", "url", ha.url, 'placeholder="http://192.168.1.20:8123"')}
       ${feld("token", "Langzeit-Zugriffstoken", "password", ha.token, 'autocomplete="off"')}
       <p class="hinweis">Token anlegen: Home Assistant → Profil → Sicherheit → Langlebige Zugangstoken. Wird für die Auslöser gebraucht.</p>`, statusMarke(S.ha)),
+    abschnitt("e-ki", "🤖 KI-Stimme", "ki", `
+      <p class="hinweis">Sieht sich bei einem KI-Auslöser das Kamerabild an und spricht die Besucher passend an
+        (Kostüm, Gegenstände, Gruppe). Braucht ein Bild-Sprachmodell mit OpenAI-kompatibler API (z. B. llama-server mit
+        Gemma 3) und den Sprach-Dienst <code>ki/stimme.py</code>. Das Bild wird nicht gespeichert.</p>
+      <div class="feldreihe">${feld("llm_url", "Sprachmodell (Adresse)", "url", ki.llm_url, 'placeholder="http://192.168.1.50:8091"')}${feld("modell", "Modell (leer = geladenes)", "text", ki.modell)}</div>
+      <div class="feldreihe">${feld("tts_url", "Sprach-Dienst (Adresse)", "url", ki.tts_url, 'placeholder="http://192.168.1.50:8092"')}${auswahl("stimme", "Stimme", [["maedchen", "Geistermädchen"], ["daemon", "Dämon"]], ki.stimme)}</div>
+      <label class="feld"><span>Eigene Vorgaben fürs Modell (optional)</span><textarea name="zusatz" rows="2" maxlength="500" placeholder="z. B. Erwähne die Spukzentrale. Sprich Kinder besonders freundlich an.">${esc(ki.zusatz)}</textarea></label>
+      <div class="feldreihe">
+        ${feld("vol", "Lautstärke %", "number", ki.vol, 'min="0" max="100"')}
+        ${feld("zeitlimit_s", "Zeitlimit (s)", "number", ki.zeitlimit_s, 'min="2" max="60" step="0.5"')}
+        ${auswahl("ersatz_kategorie", "Wenn die KI nicht kann", [["", "nichts abspielen"], ...kategorien()], ki.ersatz_kategorie)}
+      </div>
+      <div class="knopfreihe">
+        <input type="text" list="ha-kameras" id="ki-test-kamera" placeholder="camera.… (Auslöser → Sensoren laden)" style="flex:1">
+        <button type="button" class="klein lila" data-aktion="ki-test">🤖 Jetzt ansprechen</button>
+      </div>
+      <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`),
     abschnitt("e-mqtt", "📡 MQTT", "mqtt", `
       ${kasten("aktiv", "MQTT aktiv", mq.aktiv, "Gerät „Spukzentrale“ erscheint automatisch in Home Assistant")}
       <div class="feldreihe">${feld("host", "Broker", "text", mq.host, 'placeholder="192.168.1.30"')}${feld("port", "Port", "number", mq.port, 'min="1" max="65535"')}</div>
@@ -1321,12 +1349,20 @@ const AKTIONEN = {
   },
   "ha-sensoren": async () => {
     toast("Lade Sensoren …");
-    haSensoren = await api("GET", "/api/ha/sensoren");
-    toast(`${haSensoren.length} Sensoren gefunden – im Feld „Sensor“ auswählen`);
+    [haSensoren, haKameras] = await Promise.all([api("GET", "/api/ha/sensoren"), api("GET", "/api/ha/sensoren?domain=camera")]);
+    toast(`${haSensoren.length} Sensoren und ${haKameras.length} Kameras gefunden`);
     zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
   },
+  "ki-test": async () => {
+    const kamera = document.getElementById("ki-test-kamera")?.value.trim()
+      || ausloeserEntwurf?.find((a) => a.typ === "ki")?.ziel || S.einstellungen.ausloeser.find((a) => a.typ === "ki")?.ziel;
+    if (!kamera) return toast("Erst eine Kamera eintragen (camera.…)");
+    toast("KI sieht hin …");
+    const r = await api("POST", "/api/ki/test", { kamera });
+    toast(r.gesagt ? "Gesagt – Text steht im Protokoll" : "Nichts gesagt – Grund steht im Protokoll");
+  },
   "ausloeser-neu": () => {
-    ausloeserEntwurf.push({ id: "", name: "Neuer Auslöser", aktiv: true, entity_id: "", typ: "kategorie", ziel: "schrei", vol: 100, sperre_s: 60, gruselstufe_min: 1, nur_wenn_an: true });
+    ausloeserEntwurf.push({ id: "", name: "Neuer Auslöser", aktiv: true, entity_id: "", typ: "kategorie", ziel: "schrei", hinweis: "", vol: 100, sperre_s: 60, gruselstufe_min: 1, nur_wenn_an: true });
     zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
   },
   "ausloeser-loeschen": (el) => {
@@ -1415,6 +1451,7 @@ function aendern(el, live) {
   switch (a) {
     case "ambiente": return api("POST", "/api/ambiente", { an: wert });
     case "ereignisse": return api("POST", "/api/ereignisse", { an: wert });
+    case "ki": return api("POST", "/api/ki", { an: wert });
     case "hell": return schicke(() => api("POST", "/api/licht", { hell: wert }));
     case "musik-reaktiv": return schicke(() => api("POST", "/api/licht", { musik_reaktiv: wert }));
     case "lautst": return schicke(() => api("PUT", "/api/einstellungen/ton", { master: wert }));
@@ -1443,7 +1480,7 @@ function aendern(el, live) {
       const a = ausloeserEntwurf[Number(el.dataset.i)];
       a[el.dataset.feld] = wert;
       if (el.dataset.feld === "typ") {
-        a.ziel = wert === "kategorie" ? "schrei" : S.szenen[0]?.id ?? "";
+        a.ziel = wert === "kategorie" ? "schrei" : wert === "ki" ? "" : S.szenen[0]?.id ?? "";
         zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
       }
       return;

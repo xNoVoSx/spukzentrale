@@ -19,3 +19,6 @@ __pycache__/
 
 # YAMNet-Modell (lädt der Docker-Build, siehe server/Dockerfile)
 server/modelle/
+
+# Stimmvorlagen der KI-Stimme (privat)
+ki/vorlagen/

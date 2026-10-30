@@ -7,10 +7,10 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from . import VERSION, homeassistant, pfade
@@ -35,6 +35,11 @@ def zentrale(request: Request) -> Zentrale:
 
 def _nicht_gefunden(was: str) -> HTTPException:
     return HTTPException(404, f"{was} gibt es nicht")
+
+
+class KiTest(BaseModel):
+    kamera: str = Field(min_length=8, max_length=120, pattern=r"^camera\.[a-z0-9_]+$")
+    hinweis: str = Field("", max_length=300)
 
 
 class An(BaseModel):
@@ -552,12 +557,35 @@ async def einstellungen(request: Request, teil: str, d: dict = Body()):
 
 
 @router.get("/api/ha/sensoren")
-async def ha_sensoren(request: Request):
+async def ha_sensoren(request: Request, domain: Literal["binary_sensor", "camera"] = "binary_sensor"):
     ha = zentrale(request).einst.homeassistant
     try:
-        return await homeassistant.sensoren(ha.url, ha.token)
+        return await homeassistant.sensoren(ha.url, ha.token, domain)
     except Exception as e:
         raise HTTPException(502, f"Home Assistant: {e}") from e
+
+
+@router.post("/api/ki")
+async def ki_schalten(request: Request, d: An):
+    zentrale(request).ki_schalten(d.an)
+    return {"ok": True}
+
+
+@router.post("/api/ki/test")
+async def ki_test(request: Request, d: KiTest):
+    """KI-Stimme sofort ausprobieren (ohne Sperrzeit), wartet auf das Ergebnis."""
+    z = zentrale(request)
+    if z.ki.laeuft:
+        raise HTTPException(409, "Die KI-Stimme spricht gerade")
+    return {"gesagt": await z.ki.ansprechen(d.kamera, quelle="KI-Test", lage=d.hinweis)}
+
+
+@router.get("/api/geraet/sprache/{sid}")
+async def sprache_fuer_geraet(request: Request, sid: str):
+    wav = zentrale(request).ki.wav(sid)
+    if wav is None:
+        raise _nicht_gefunden("Diese Ansage")
+    return Response(wav, media_type="audio/wav")
 
 
 @router.post("/api/latenz/test")

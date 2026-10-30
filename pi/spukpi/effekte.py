@@ -23,6 +23,28 @@ log = logging.getLogger(__name__)
 RATE = 44100
 
 
+def dekodieren(quelle: str) -> np.ndarray:
+    """Beliebige Audiodatei/URL -> mono float32 bei 44,1 kHz."""
+    roh = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-i", quelle,
+         "-f", "f32le", "-ar", str(RATE), "-ac", "1", "pipe:1"],
+        capture_output=True, check=True, timeout=60,
+    ).stdout
+    return np.frombuffer(roh, np.float32)
+
+
+def laden_und_dekodieren(url: str) -> np.ndarray:
+    """Blockiert (Executor). Lädt eine Ansage vom Server und dekodiert sie."""
+    with urllib.request.urlopen(url, timeout=10) as antwort:
+        daten = antwort.read()
+    roh = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-i", "pipe:0",
+         "-f", "f32le", "-ar", str(RATE), "-ac", "1", "pipe:1"],
+        input=daten, capture_output=True, check=True, timeout=30,
+    ).stdout
+    return np.frombuffer(roh, np.float32)
+
+
 class Effekte:
     def __init__(self, ordner: Path) -> None:
         self.ordner = ordner
@@ -110,11 +132,6 @@ class Effekte:
             tmp.unlink(missing_ok=True)
             raise OSError(f"nur {tmp.stat().st_size if tmp.exists() else 0} von {groesse} Byte")
         tmp.rename(wav)
-        roh = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-i", str(wav),
-             "-f", "f32le", "-ar", str(RATE), "-ac", "1", "pipe:1"],
-            capture_output=True, check=True, timeout=60,
-        ).stdout
-        daten = np.frombuffer(roh, np.float32)
+        daten = dekodieren(str(wav))
         np.save(self.ordner / f"{fid}.npy.tmp.npy", daten)
         (self.ordner / f"{fid}.npy.tmp.npy").rename(self._npy(fid))

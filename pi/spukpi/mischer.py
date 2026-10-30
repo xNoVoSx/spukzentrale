@@ -116,6 +116,10 @@ class Mischer(threading.Thread):
         self.befehle.put(("fx", (fid, vol, licht)))
         return True
 
+    def klang_start(self, name: str, klang: np.ndarray, vol: int, licht: dict | None) -> None:
+        """Einmaliger Klang (KI-Ansage), schon dekodiert: mono float32, 44,1 kHz."""
+        self.befehle.put(("klang", (name, klang, vol, licht)))
+
     def fx_stop_alle(self) -> None:
         self.befehle.put(("fx_stop", None))
 
@@ -178,6 +182,12 @@ class Mischer(threading.Thread):
                 if len(self.stimmen) >= MAX_STIMMEN:
                     self.stimmen.pop(0)
                 self.stimmen.append(Stimme(fid, klang, max(0, min(100, vol)) / 100, licht))
+                self.effekte_gespielt += 1
+            elif art == "klang":
+                name, klang, vol, licht = arg
+                if len(self.stimmen) >= MAX_STIMMEN:
+                    self.stimmen.pop(0)
+                self.stimmen.append(Stimme(name, klang, max(0, min(100, vol)) / 100, licht))
                 self.effekte_gespielt += 1
             elif art == "fx_stop":
                 self.stimmen.clear()

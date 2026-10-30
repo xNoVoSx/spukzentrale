@@ -52,8 +52,8 @@ async def _anmelden(url: str, token: str):
         raise
 
 
-async def sensoren(url: str, token: str) -> list[dict[str, Any]]:
-    """Alle binary_sensor-Entitäten (für die Auswahl in der Oberfläche)."""
+async def sensoren(url: str, token: str, domain: str = "binary_sensor") -> list[dict[str, Any]]:
+    """Alle Entitäten einer Domain (binary_sensor für Auslöser, camera für die KI-Stimme) für die Oberfläche."""
     if not url or not token:
         raise HaFehler("Home Assistant ist nicht eingerichtet")
     ws = await _anmelden(url, token)
@@ -72,7 +72,7 @@ async def sensoren(url: str, token: str) -> list[dict[str, Any]]:
                 "zustand": s.get("state"),
             }
             for s in msg["result"]
-            if s["entity_id"].startswith("binary_sensor.")
+            if s["entity_id"].startswith(domain + ".")
         ]
         # Personen-/Bewegungssensoren nach oben
         liste.sort(key=lambda s: (not any(w in s["entity_id"] for w in ("person", "motion", "bewegung")), s["name"].lower()))

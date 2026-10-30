@@ -20,6 +20,7 @@ from fastapi import WebSocket
 from . import VERSION, pfade
 from .ambiente import Ambiente
 from .geraete import Geraet, Geraete
+from .ki import KiStimme
 from .licht import EspLicht, LichtAusgang
 from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
 from . import musikanalyse
@@ -66,6 +67,8 @@ class Zentrale:
         self._analyse_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="analyse")
         self.analyse_laeuft: set[str] = set()
         self.beobachter: list[Callable[[str], None]] = []  # z. B. MQTT: bei Änderungen benachrichtigen
+        self.ki = KiStimme(self)
+        self._ki_tasks: set[asyncio.Task] = set()
 
         # werden in main.py gesetzt (brauchen die Zentrale selbst)
         self.spieler = None    # ablauf.SzenenSpieler
@@ -543,6 +546,12 @@ class Zentrale:
             self.generator.neu_planen()
         self._zustand_geaendert()
 
+    def ki_schalten(self, an: bool) -> None:
+        self.zustand.ki_an = an
+        self.speichern("zustand")
+        self.protokollieren(f"KI-Stimme {'an' if an else 'aus – KI-Auslöser spielen Ersatz-Sounds'}", "info")
+        self._zustand_geaendert()
+
     def gruselstufe(self, stufe: int) -> None:
         stufe = max(1, min(3, stufe))
         if stufe != self.zustand.gruselstufe:
@@ -577,6 +586,18 @@ class Zentrale:
             if jetzt - self._letzte_ausloesung.get(a.id, -1e9) < a.sperre_s:
                 return False
         self._letzte_ausloesung[a.id] = jetzt
+        if a.typ == "ki" and not self.zustand.ki_an:
+            # KI abgeschaltet: wie ein normaler Auslöser mit Sound aus der Ersatz-Kategorie
+            kat = self.einst.ki.ersatz_kategorie
+            return bool(kat and await self.fx_kategorie(kat, a.vol, quelle=quelle))
+        if a.typ == "ki":
+            if self.ki.laeuft:
+                return False
+            # läuft im Hintergrund (Bild + Modell + Stimme dauern Sekunden), HA-Verbindung nicht aufhalten
+            t = asyncio.create_task(self.ki.ansprechen(a.ziel, a.vol, quelle, a.hinweis), name="ki-stimme")
+            self._ki_tasks.add(t)
+            t.add_done_callback(self._ki_tasks.discard)
+            return True
         if a.typ == "kategorie":
             if not await self.fx_kategorie(a.ziel, a.vol, quelle=quelle):
                 self.protokollieren(f"{quelle}: keine Sounds in „{KATEGORIEN.get(a.ziel, a.ziel)}“", "fehler")

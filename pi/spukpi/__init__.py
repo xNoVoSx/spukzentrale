@@ -1,3 +1,3 @@
 """Spukzentrale auf dem Raspberry Pi: Sound (statt Sound-ESP) und USB-Brücke zum Licht-ESP."""
 
-VERSION = "1.3.6"
+VERSION = "1.4.0"

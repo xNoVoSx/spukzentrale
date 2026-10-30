@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from . import VERSION, system
+from . import effekte as effekte_mod
 from .ambiente import Ambiente
 from .effekte import Effekte
 from .konfig import Konfig, laden
@@ -62,7 +63,7 @@ class Dienst:
             "t": "hallo", "rolle": "sound", "fw": VERSION, "plattform": "pi",
             "mac": system.mac_adresse(), "ip": system.ip_adresse(),
             "fx_frei_kb": self.effekte.frei_kb(), "fx_gesamt_kb": self.effekte.gesamt_kb(),
-            "max_stimmen": MAX_STIMMEN,
+            "max_stimmen": MAX_STIMMEN, "kann_sagen": True,
             "neustart_grund": self.start_grund, "neustart_normal": self.start_grund == "Dienst gestartet",
         })
         self.start_grund = "Dienst gestartet"
@@ -98,6 +99,11 @@ class Dienst:
                 await self.sound.senden({"t": "fx_fehlt", "id": fid})
             else:
                 self.effekte.merken(fid, vol, licht)
+        elif t == "sag":
+            # KI-Stimme: einmalige Ansage, wird vom Server geladen und sofort gespielt (nicht gespeichert)
+            pfad = str(m.get("pfad", ""))
+            licht = m.get("licht") if isinstance(m.get("licht"), dict) else None
+            asyncio.create_task(self._sagen(pfad, int(m.get("vol", 100) or 0), licht))
         elif t == "fx_stop":
             self.mischer.fx_stop_alle()
         elif t == "fx_sync":
@@ -109,6 +115,18 @@ class Dienst:
         elif t == "neustart":
             log.info("Neustart auf Wunsch des Servers")
             self.beenden(neustart=True)
+
+    async def _sagen(self, pfad: str, vol: int, licht: dict | None) -> None:
+        if not pfad.startswith("/"):
+            return
+        try:
+            klang = await asyncio.get_running_loop().run_in_executor(
+                None, effekte_mod.laden_und_dekodieren, self.k.basis_url + pfad)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Ansage %s: %s", pfad, e)
+            await self.sound.senden({"t": "log", "text": f"Ansage nicht geladen: {e}"})
+            return
+        self.mischer.klang_start("sag", klang, vol, licht)
 
     async def _fx_sync(self, basis: str, liste: list) -> None:
         erg = await asyncio.get_running_loop().run_in_executor(None, self.effekte.abgleichen, basis, liste)
