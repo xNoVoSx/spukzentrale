@@ -517,7 +517,7 @@ bereich("test-jetzt", "test", ["test", "zustand", "protokoll", "ki"], () => `
     <p class="hinweis">Musik: ${esc(S.ambiente_jetzt || "–")}${S.szene ? ` · Szene: ${esc(S.szene.name)}` : ""}</p>
     ${kiStatus.regie ? `<h3>🎬 Regisseur ${S.zustand.regie_an ? "" : "(aus)"}</h3>
     <ul class="protokoll">
-      ${kiStatus.regie.verlauf.slice(0, 5).map((e) => `<li><time>${zeit(e.zeit)}</time><span><b>${esc(e.effekt || "–")}</b> · ${esc(e.grund)}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
+      ${kiStatus.regie.verlauf.slice(0, 5).map((e) => `<li><time>${zeit(e.zeit)}</time><span><b>${esc(e.name || e.effekt || "–")}</b> · ${esc(e.grund)}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
     </ul>` : ""}
     <h3>Protokoll</h3>
     <ul class="protokoll">

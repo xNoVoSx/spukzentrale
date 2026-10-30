@@ -167,6 +167,17 @@ class Playlist(BaseModel):
     ueberblend_s: float = Field(4.0, ge=0, le=15)
 
 
+class FxAnalyse(BaseModel):
+    """Ergebnis von fxanalyse.analysieren() – für den Regisseur und die Kategorie-Prüfung."""
+    version: int = 0
+    hoerbar_ms: int = 0                 # ohne Stille am Ende
+    spitze_s: float = 0                 # lautester Moment
+    verlauf: str = ""                   # „setzt schlagartig ein“, „schwillt langsam an“, „in 3 Stößen“ …
+    klassen: list[str] = Field(default_factory=list)   # was YAMNet hört (AudioSet, englisch)
+    vorschlag: str | None = None        # passt eher in diese Kategorie
+    text: str = ""                      # automatische Beschreibung
+
+
 class Effekt(BaseModel):
     """Effekt-Sound. Die ID ist ein Hash des konvertierten Inhalts."""
     id: str
@@ -176,6 +187,17 @@ class Effekt(BaseModel):
     licht: LichtAktion | None = None
     dauer_ms: int = 0
     groesse: int = 0
+    beschreibung: str = Field("", max_length=300)     # eigene Beschreibung (hat Vorrang vor der automatischen)
+    analyse: FxAnalyse | None = None
+
+    @property
+    def text(self) -> str:
+        """Was der Regisseur über den Sound erfährt."""
+        return self.beschreibung.strip() or (self.analyse.text if self.analyse else self.name)
+
+    @property
+    def hoerbar_ms(self) -> int:
+        return self.analyse.hoerbar_ms if self.analyse and self.analyse.hoerbar_ms else self.dauer_ms
 
 
 class Medien(BaseModel):
@@ -375,7 +397,7 @@ class KiEinst(BaseModel):
     neu_pruefen_s: int = Field(30, ge=10, le=300)     # geht/Nachlauf: frühestens dann prüfen, ob Neue kommen
     # Regisseur (Zustand.regie_an)
     regie_abstand_s: int = Field(15, ge=5, le=300)    # in Pausen frühestens so oft ein Effekt
-    regie_max_s: int = Field(10, ge=2, le=60)         # längere Sounds nimmt der Regisseur nicht
+    regie_max_s: int = Field(15, ge=2, le=60)         # längere Sounds nimmt der Regisseur nicht
     regie_szene_max_s: int = Field(15, ge=2, le=120)  # längere Szenen nimmt der Regisseur nicht
     regie_modell: str = Field("claude-opus-5-5", max_length=60)   # Claude-Modell (leer = nur lokal); Schlüssel: Umgebungsvariable ANTHROPIC_API_KEY
     regie_zeitlimit_s: float = Field(6.0, ge=1, le=30)  # länger braucht Claude nicht – sonst entscheidet das lokale Modell

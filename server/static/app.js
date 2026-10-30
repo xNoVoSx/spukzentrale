@@ -613,7 +613,10 @@ bereich("sounds-fx", "sounds", ["medien", "daten"], () => {
       <h3>${KATEGORIE_SYMBOL[k]} ${esc(name)} (${fx.length})</h3>
       <ul class="liste">${fx.map((f) => `
         <li>
-          <div class="name">${esc(f.name)}<small>${dauer(f.dauer_ms)} · ${f.licht ? "💡 " + (AKTION_NAMEN[f.licht.name] || f.licht.name) : "ohne Licht"}${f.vol < 100 ? ` · ${f.vol} %` : ""}</small></div>
+          <div class="name">${esc(f.name)}<small>${dauer(f.dauer_ms)} · ${f.licht ? "💡 " + (AKTION_NAMEN[f.licht.name] || f.licht.name) : "ohne Licht"}${f.vol < 100 ? ` · ${f.vol} %` : ""}${f.analyse ? ` · ${esc(f.analyse.verlauf)}` : ""}</small>
+            ${f.beschreibung ? `<small style="white-space:normal">📝 ${esc(f.beschreibung)}</small>` : f.analyse?.klassen?.length ? `<small style="white-space:normal">🔎 ${esc(f.analyse.klassen.join(", "))}</small>` : ""}
+            ${f.analyse?.vorschlag ? `<small class="warnung" style="white-space:normal">⚠️ klingt eher nach „${esc(S.kategorien[f.analyse.vorschlag] || f.analyse.vorschlag)}“ – Kategorie prüfen</small>` : ""}
+            ${f.analyse && f.dauer_ms - f.analyse.hoerbar_ms >= 500 ? `<small class="warnung">${((f.dauer_ms - f.analyse.hoerbar_ms) / 1000).toFixed(1)} s Stille am Ende</small>` : ""}</div>
           <button class="klein symbol" data-aktion="fx-spielen" data-id="${f.id}" title="Draußen abspielen">▶️</button>
           <button class="klein symbol" data-aktion="vorhoeren" data-url="/api/fx/${f.id}/vorhoeren" title="Im Browser anhören">🎧</button>
           ${k === "system" ? "" : `
@@ -630,6 +633,10 @@ bereich("sounds-fx", "sounds", ["medien", "daten"], () => {
         ? `Effekte auf der SD-Karte des Pi: ${(m.fx_belegt_kb / 1024).toFixed(1)} MB belegt, ${(m.fx_kapazitaet_kb / 1048576).toFixed(1)} GB Platz`
         : `Speicher im Sound-ESP: ${m.fx_belegt_kb} von ${m.fx_kapazitaet_kb} KB (≈ ${Math.max(0, Math.round((m.fx_kapazitaet_kb - m.fx_belegt_kb) / 11))} s frei)`}</p>
       ${regler("ton", "Lautstärke", S.einstellungen.ton.fx_vol, 'data-feld="fx_vol"', 0, 100, " %")}
+      ${m.fx.some((f) => f.analyse && f.dauer_ms - f.analyse.hoerbar_ms >= 500)
+        ? `<div class="knopfreihe"><button type="button" class="klein" data-aktion="fx-nachbearbeiten">✂️ Stille am Ende kürzen (${m.fx.filter((f) => f.analyse && f.dauer_ms - f.analyse.hoerbar_ms >= 500).length} Sounds)</button></div>` : ""}
+      <p class="hinweis">Jeder Sound wird beim Hochladen analysiert (hörbare Länge, Verlauf, was zu hören ist). Daraus entsteht eine
+        Beschreibung für den KI-Regisseur – eine eigene Beschreibung (✏️) hat Vorrang. Stille am Ende wird beim Hochladen abgeschnitten.</p>
       ${gruppen}
       <h3>Hochladen</h3>
       <div class="feldreihe">
@@ -1155,8 +1162,11 @@ async function fxBearbeiten(id) {
       ${feld("vol", "Lautstärke %", "number", fx.vol, 'min="0" max="100"')}
     </div>
     ${lichtAktionFelder(fx.licht)}
-    <p class="hinweis">„Blitze zum Sound“ und „Puls zum Sound“ folgen der Lautstärke des Effekts – ideal für Donner und Herzschlag.</p>`,
-  (f) => ({ name: f.elements.name.value, kategorie: f.elements.kategorie.value, vol: Number(f.elements.vol.value), licht: lichtAktionLesen(f) }));
+    <p class="hinweis">„Blitze zum Sound“ und „Puls zum Sound“ folgen der Lautstärke des Effekts – ideal für Donner und Herzschlag.</p>
+    <label class="feld"><span>Beschreibung für den KI-Regisseur (optional)</span><textarea name="beschreibung" rows="2" maxlength="300" placeholder="${esc(fx.analyse?.text || "z. B. Wolfsrudel heult in der Ferne, wird lauter")}">${esc(fx.beschreibung || "")}</textarea></label>
+    ${fx.analyse ? `<p class="hinweis">Analyse: ${esc(fx.analyse.text)}</p>` : ""}`,
+  (f) => ({ name: f.elements.name.value, kategorie: f.elements.kategorie.value, vol: Number(f.elements.vol.value), licht: lichtAktionLesen(f),
+    beschreibung: f.elements.beschreibung.value }));
   if (daten) await api("PUT", `/api/fx/${id}`, daten);
 }
 
@@ -1340,6 +1350,11 @@ const AKTIONEN = {
   },
   "fx-hochladen": () => hochladen("#fx-datei", "/api/fx", () => ({ kategorie: $("#fx-kategorie").value, name: $("#fx-name").value })),
   "fx-bearbeiten": (el) => fxBearbeiten(el.dataset.id),
+  "fx-nachbearbeiten": async () => {
+    toast("Sounds werden gekürzt …");
+    const r = await api("POST", "/api/fx/nachbearbeiten");
+    toast(r.gekuerzt ? `${r.gekuerzt} Sounds gekürzt, ${r.gespart_s} s Stille weg` : "Nichts zu kürzen");
+  },
   "fx-loeschen": async (el) => {
     if (confirm("Effekt löschen? Er wird auch vom Sound-Gerät entfernt.")) await api("DELETE", `/api/fx/${el.dataset.id}`);
   },
@@ -1619,7 +1634,7 @@ bereich("ki-regie", "ki", ["ki", "zustand"], () => {
           : "Gemma lokal"}</p>
       <p class="hinweis">Auswahl jetzt: ${optionen.map(esc).join(", ") || "–"}</p>
       <ul class="protokoll">
-        ${r.verlauf.map((e) => `<li class="${e.grund.startsWith("Fehler") ? "fehler" : ""}"><time>${zeit(e.zeit)}</time><span><b>${esc(e.effekt || "–")}</b> · ${esc(e.anlass)}${e.grund ? `<br><small>${esc(e.grund)} (${e.modell ? esc(e.modell) + ", " : ""}${e.ms} ms)</small>` : ""}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
+        ${r.verlauf.map((e) => `<li class="${e.grund.startsWith("Fehler") ? "fehler" : ""}"><time>${zeit(e.zeit)}</time><span><b>${esc(e.name || e.effekt || "–")}</b> · ${esc(e.anlass)}${e.grund ? `<br><small>${esc(e.grund)} (${e.modell ? esc(e.modell) + ", " : ""}${e.ms} ms)</small>` : ""}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
       </ul>
     </div>`;
 });

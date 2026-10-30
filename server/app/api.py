@@ -21,6 +21,7 @@ from .modelle import (
     Ausloeser, Effekt, Ereignisse, Kategorie, LichtAktion, Musikstueck, Playlist, Stimmung, Szene, Zone, neue_id,
 )
 from .vorgaben import LICHT_JE_KATEGORIE
+from . import fxanalyse
 from .ki import bild_typ
 from .zentrale import Zentrale
 
@@ -76,6 +77,7 @@ class EffektAenderung(BaseModel):
     kategorie: Kategorie
     vol: int = Field(100, ge=0, le=100)
     licht: LichtAktion | None = None
+    beschreibung: str = Field("", max_length=300)
 
 
 class ZonenTest(BaseModel):
@@ -495,18 +497,27 @@ async def fx_hochladen(
     ))
     z.protokollieren(f"Effekt hochgeladen: {f.name} ({dauer_ms / 1000:.1f} s)", "info")
     await z.fx_sync()
+    await z.fx_analysieren(f.id)
     z.daten_geaendert()
-    return f
+    return z.medien.fx(f.id) or f
 
 
 @router.put("/api/fx/{fid}")
 async def fx_aendern(request: Request, fid: str, d: EffektAenderung):
     z = zentrale(request)
     f = _fx_oder_404(z, fid)
-    f.name, f.kategorie, f.vol, f.licht = d.name, d.kategorie, d.vol, d.licht
+    f.name, f.kategorie, f.vol, f.licht, f.beschreibung = d.name, d.kategorie, d.vol, d.licht, d.beschreibung.strip()
+    if f.analyse:
+        f.analyse.vorschlag = fxanalyse.kategorie_vorschlag(f.name, f.kategorie, f.analyse.klassen)
     z.medien.speichern()
     z.daten_geaendert()
     return f
+
+
+@router.post("/api/fx/nachbearbeiten")
+async def fx_nachbearbeiten(request: Request):
+    """Stille am Ende vorhandener Effekte abschneiden (neue Uploads werden gleich gekürzt)."""
+    return await zentrale(request).fx_nachbearbeiten()
 
 
 @router.delete("/api/fx/{fid}")

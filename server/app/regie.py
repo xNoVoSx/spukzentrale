@@ -128,11 +128,14 @@ class Regie:
         kats: list[str] = []
         for r in z.ereignisse.regeln:
             if (r.aktiv and r.typ == "kategorie" and r.gruselstufe_min <= stufe and r.ziel not in NICHT_FUER_REGIE
-                    and r.ziel not in kats and any(f.dauer_ms <= max_ms for f in z.medien.fx_der_kategorie(r.ziel))):
+                    and r.ziel not in kats):
                 kats.append(r.ziel)
         aus = {"keiner": "kein Effekt, Stille wirkt auch"}
+        # einzelne Sounds mit Beschreibung (eigene oder aus der Analyse) – so kann der Regisseur gezielt wählen
         for k in kats:
-            aus[k] = f"Geräusch „{KATEGORIEN.get(k, k)}“ mit passendem Licht"
+            for f in z.medien.fx_der_kategorie(k):
+                if f.hoerbar_ms <= max_ms:
+                    aus[f"fx_{f.id}"] = f"Geräusch ({KATEGORIEN.get(k, k)}, {f.hoerbar_ms / 1000:.0f} s, mit Licht): {f.text}"
         for n, (_, _, text) in LICHT.items():
             aus[n] = f"nur Licht: {text}"
         if z.spieler:
@@ -145,14 +148,27 @@ class Regie:
                 if s.gruselstufe <= stufe and 0 < dauer <= z.einst.ki.regie_szene_max_s * 1000 and self._szene_geht(s):
                     aus[f"szene_{s.id}"] = f"Szene „{s.name}“ ({dauer / 1000:.0f} s): {self._szene_text(s)}"
         if time.monotonic() - self.letzter_schreck < RUHE_NACH_SCHRECK_S:
-            for h in HEFTIG:
-                aus.pop(h, None)
+            for e in [e for e in aus if self._heftig(e)]:
+                del aus[e]
         if z.zustand.ambiente_an and not self.musik_eingriff and not z.musik_daempfung:
             aus.update(MUSIK)
             if not any(m.analyse and m.analyse.stimmung in ("duester", "dramatisch") and m.id != z.ambiente.jetzt_id
                        for m in z.medien.daten.musik):
                 del aus["musik_duester"]
         return aus
+
+    def _name(self, effekt: str, aus: dict[str, str]) -> str:
+        """Kurzer Name für Protokoll und Oberfläche."""
+        if effekt.startswith("fx_"):
+            f = self.z.medien.fx(effekt[3:])
+            return f"{KATEGORIEN.get(f.kategorie, f.kategorie)}: {f.name}" if f else effekt
+        return aus.get(effekt, effekt).split(" (")[0] if effekt.startswith("szene_") else aus.get(effekt, effekt)
+
+    def _heftig(self, effekt: str) -> bool:
+        if effekt.startswith("fx_"):
+            f = self.z.medien.fx(effekt[3:])
+            return bool(f and f.kategorie in HEFTIG)
+        return effekt in HEFTIG
 
     def _szene_geht(self, s) -> bool:
         """Szenen, deren Sounds alle fehlen, wären nur halbe Szenen – nur nehmen, wenn jeder Sound-Schritt klingt."""
@@ -228,6 +244,7 @@ class Regie:
             if eintrag["grund"].startswith("Fehler"):
                 self._merken(eintrag)
         eintrag["effekt"], eintrag["grund"] = effekt, grund
+        eintrag["name"] = self._name(effekt, aus)
         # Lage kann sich in der Denkzeit geändert haben (geklingelt, KI spricht, Szene …)
         if effekt != "keiner" and (z.besuch.zustand == "geklingelt" or z.ki.laeuft or (z.spieler and z.spieler.laufend)):
             eintrag["grund"] = "verworfen – inzwischen passiert etwas anderes"
@@ -235,12 +252,12 @@ class Regie:
         if effekt != "keiner":
             await self._spielen(effekt)
             self.letzte.append((effekt, time.monotonic()))
-            if effekt in HEFTIG:
+            if self._heftig(effekt):
                 self.letzter_schreck = time.monotonic()
             if effekt in MUSIK:
                 self.musik_eingriff = True
             if not effekt.startswith("szene_"):     # Szenen trägt der Szenen-Spieler selbst ein
-                z.protokollieren(f"Regie: {aus.get(effekt, effekt)} – {grund}", "fx")
+                z.protokollieren(f"Regie: {eintrag['name']} – {grund}", "fx")
         self.letzte_aktion = time.monotonic()
         self._merken(eintrag)
         return effekt
@@ -361,20 +378,25 @@ class Regie:
             await z.aktion(LichtAktion(name=name, dauer_ms=dauer), dauer_ms=dauer, quelle="Regie")
             self.belegt_bis = time.monotonic() + dauer / 1000
             return
-        max_ms = z.einst.ki.regie_max_s * 1000
-        kandidaten = [f for f in z.medien.fx_der_kategorie(effekt) if f.dauer_ms <= max_ms]
-        if not kandidaten:
-            return
-        f = z.fx_waehlen(effekt)
-        if f is None or f.dauer_ms > max_ms:
-            f = kandidaten[0]
+        if effekt.startswith("fx_"):
+            f = z.medien.fx(effekt[3:])
+            if f is None:
+                return
+        else:                                   # Kategorie (ältere Antworten/Tests): zufälliger passender Sound
+            max_ms = z.einst.ki.regie_max_s * 1000
+            kandidaten = [f for f in z.medien.fx_der_kategorie(effekt) if f.hoerbar_ms <= max_ms]
+            if not kandidaten:
+                return
+            f = z.fx_waehlen(effekt)
+            if f is None or f.hoerbar_ms > max_ms:
+                f = kandidaten[0]
         # Zeitpunkt passend zur Musik: nicht in den Gesang, gern in eine ruhige Stelle, auf den Schlag –
         # aber die Leute stehen jetzt da: höchstens MUSIK_WARTEN_MAX_S warten
-        self.belegt_bis = time.monotonic() + MUSIK_WARTEN_MAX_S + f.dauer_ms / 1000 + 0.3
+        self.belegt_bis = time.monotonic() + MUSIK_WARTEN_MAX_S + f.hoerbar_ms / 1000 + 0.3
         gewartet = False
         for _ in range(3):
             stueck, pos = z.musik_lage()
-            plan = abstimmung.planen(stueck, pos, effekt, f.dauer_ms / 1000, z.einst.musik, gewartet)
+            plan = abstimmung.planen(stueck, pos, f.kategorie, f.hoerbar_ms / 1000, z.einst.musik, gewartet)
             if plan.jetzt:
                 if plan.verzoegerung_s > 0:
                     await asyncio.sleep(plan.verzoegerung_s)
@@ -387,7 +409,7 @@ class Regie:
             self.belegt_bis = 0.0
             return
         await z.fx_spielen(f)
-        self.belegt_bis = time.monotonic() + f.dauer_ms / 1000 + 0.3
+        self.belegt_bis = time.monotonic() + f.hoerbar_ms / 1000 + 0.3
 
 
 def _lesen(antwort: str, aus: dict[str, str]) -> tuple[str, str]:

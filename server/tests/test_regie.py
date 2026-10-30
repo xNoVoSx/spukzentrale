@@ -57,10 +57,10 @@ def z(monkeypatch):
 
 def test_auswahl_folgt_regeln_und_gruselstufe(z):
     aus = z.regie.optionen()
-    assert "donner" in aus and "keiner" in aus and "licht_blitz" in aus
-    assert "kettensaege" not in aus and "stimme" not in aus and "herz" not in aus and "lachen" not in aus
+    assert "fx_d1" in aus and "keiner" in aus and "licht_blitz" in aus and "Donner" in aus["fx_d1"]
+    assert "fx_k1" not in aus and "fx_s1" not in aus and "fx_l1" not in aus     # zu lang / Stimme / Stufe 3
     z.zustand.gruselstufe = 3
-    assert "lachen" in z.regie.optionen()
+    assert "fx_l1" in z.regie.optionen()
 
 
 def test_standard_ist_aus_und_ohne_besuch_passiert_nichts(z):
@@ -195,12 +195,15 @@ def test_feste_regeln_schreck_und_musik(z):
     z.zustand.ambiente_an = True
     z.besuch.zustand = "tuer"
     z.medien.fx_der_kategorie = lambda k: [Effekt(id=k, name=k, kategorie=k, dauer_ms=3000)]
+    z.medien.fx = lambda fid: Effekt(id=fid, name=fid, kategorie=fid, dauer_ms=3000)
     z.ereignisse.regeln.append(Regel(id="s", typ="kategorie", ziel="schrei"))
     z.zustand.gruselstufe = 3
-    assert "schrei" in z.regie.optionen() and "musik_stille" in z.regie.optionen()
-    z._regie_wahl = "schrei"
+    assert "fx_schrei" in z.regie.optionen() and "musik_stille" in z.regie.optionen()
+    z._regie_wahl = "fx_schrei"
     asyncio.run(z.regie.entscheiden("Pause"))
-    assert "schrei" not in z.regie.optionen()                 # nach dem Schreck erst mal nichts Heftiges
+    assert z.gespielt[-1] == "schrei" and z.regie.verlauf[0]["name"] == "Schrei: schrei"
+    assert "fx_schrei" not in z.regie.optionen()              # nach dem Schreck erst mal nichts Heftiges
+    assert "fx_donner" in z.regie.optionen()
     z.regie.belegt_bis = 0
     z._regie_wahl = "musik_stille"
     asyncio.run(z.regie.entscheiden("Pause"))

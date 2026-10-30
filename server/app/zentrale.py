@@ -26,7 +26,8 @@ from .regie import Regie
 from .simulation import Simulation
 from .licht import EspLicht, LichtAusgang
 from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
-from . import musikanalyse
+from . import fxanalyse, musikanalyse
+from . import medien as medien_mod
 from .modelle import (
     GEHEIM_PLATZHALTER, GEHEIME_FELDER, KATEGORIEN, AKTIONEN, EFFEKTE, Ausloeser, Effekt, Einstellungen, Ereignisse,
     LichtAktion, LichtZustand, Musikstueck, Regel, Stimmung, Stimmungen, Szene, Szenen, TonEinst, Zone, Zustand,
@@ -518,10 +519,63 @@ class Zentrale:
             self.daten_geaendert()
 
     async def analysen_nachholen(self) -> None:
-        """Beim Start: Stücke ohne (aktuelle) Analyse nacheinander analysieren."""
+        """Beim Start: Stücke und Effekte ohne (aktuelle) Analyse nacheinander analysieren."""
         for s in list(self.medien.daten.musik):
             if s.analyse is None or s.analyse.version < musikanalyse.ANALYSE_VERSION:
                 await self.musik_analysieren(s.id)
+        for f in list(self.medien.daten.fx):
+            if f.kategorie != "system" and (f.analyse is None or f.analyse.version < fxanalyse.FX_ANALYSE_VERSION):
+                await self.fx_analysieren(f.id)
+
+    async def fx_analysieren(self, fid: str) -> None:
+        f = self.medien.fx(fid)
+        if not f:
+            return
+        try:
+            a = await asyncio.get_running_loop().run_in_executor(
+                self._analyse_pool, fxanalyse.analysieren, self.medien.fx_pfad(fid), f.name, f.kategorie)
+        except Exception:  # noqa: BLE001 – ohne Analyse geht es auch (Regisseur nimmt dann den Namen)
+            log.exception("Effekt-Analyse %s", fid)
+            return
+        f = self.medien.fx(fid)
+        if f:
+            f.analyse = a
+            self.medien.speichern()
+            self.daten_geaendert()
+
+    async def fx_nachbearbeiten(self) -> dict:
+        """Vorhandene Effekte mit langer Stille am Ende neu umwandeln (gekürzt). Neue Datei = neue ID: Verweise in
+        Szenen werden angepasst, der Pi gleicht danach ab."""
+        gekuerzt, gespart = 0, 0
+        for alt in list(self.medien.daten.fx):
+            if alt.kategorie == "system" or not alt.analyse or alt.dauer_ms - alt.hoerbar_ms < 500:
+                continue
+            try:
+                fid, dauer_ms, groesse = await medien_mod.fx_umwandeln(self.medien.fx_pfad(alt.id))
+            except Exception:  # noqa: BLE001
+                log.exception("Nachbearbeiten %s", alt.id)
+                continue
+            if fid == alt.id or dauer_ms >= alt.dauer_ms:
+                continue
+            gespart += alt.dauer_ms - dauer_ms
+            gekuerzt += 1
+            neu = alt.model_copy(update={"id": fid, "dauer_ms": dauer_ms, "groesse": groesse})
+            liste = self.medien.daten.fx
+            liste[:] = [neu if x.id == alt.id else x for x in liste if x.id != fid or x.id == alt.id]
+            self.medien.fx_pfad(alt.id).unlink(missing_ok=True)
+            self.medien.fx_vorhoer_pfad(alt.id).unlink(missing_ok=True)
+            for s in self.szenen.liste:
+                for sch in s.schritte:
+                    if sch.fx_id == alt.id:
+                        sch.fx_id = fid
+            self.medien.speichern()
+            await self.fx_analysieren(fid)
+        if gekuerzt:
+            self.speichern("szenen")
+            await self.fx_sync()
+            self.daten_geaendert()
+            self.protokollieren(f"Effekte nachbearbeitet: {gekuerzt} gekürzt, {gespart / 1000:.1f} s Stille weg", "info")
+        return {"gekuerzt": gekuerzt, "gespart_s": round(gespart / 1000, 1)}
 
     def _ambiente_pos(self) -> dict | None:
         """Für die Fortschrittsanzeige: Stück, Sekunde (draußen zu hören) und Länge; die Oberfläche zählt selbst weiter."""

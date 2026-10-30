@@ -14,6 +14,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from . import fxanalyse
 from . import pfade
 from .modelle import Effekt, Medien, Musikstueck
 from .speicher import lade, speichere
@@ -100,10 +101,12 @@ async def fx_umwandeln(quelle: Path) -> tuple[str, int, int]:
         if not m or float(m.group(1)) < -70:
             raise KonvertierFehler("Datei ist (fast) still")
         verstaerkung = -1.0 - float(m.group(1))
-        filt = f"volume={verstaerkung:.2f}dB"
+        # Stille am Ende: dieselbe Messung wie die Effekt-Analyse (nach der Verstärkung), 0,3 s Nachhall bleiben
+        ende_s = await asyncio.get_running_loop().run_in_executor(None, fxanalyse.hoerbar_s, pcm, verstaerkung)
+        filt = f"volume={verstaerkung:.2f}dB" + (f",atrim=end={ende_s + 0.3:.3f}" if ende_s else "")
         await _ffmpeg("-i", str(pcm), "-af", filt, "-c:a", "adpcm_ima_wav", "-block_size", str(FX_BLOCK), str(wav))
         await _ffmpeg("-i", str(pcm), "-af", filt, "-c:a", "libmp3lame", "-b:a", "64k", str(mp3))
-        d = await dauer_s(pcm)
+        d = await dauer_s(wav)
         if d < 0.05:
             raise KonvertierFehler("Sound ist zu kurz")
         fid = _hash(wav)
