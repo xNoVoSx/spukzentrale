@@ -182,6 +182,7 @@ class MqttBruecke:
         schalter("ambiente", "Ambiente", "mdi:music")
         schalter("ereignisse", "Zufallsereignisse", "mdi:dice-5")
         schalter("ki", "KI-Stimme", "mdi:robot")
+        schalter("regie", "KI-Regisseur", "mdi:movie-open-star")
         for obj, name, icon in (("hell", "Helligkeit", "mdi:brightness-6"), ("lautst", "Lautstärke", "mdi:volume-high")):
             e.append(("number", obj, {**self._basis(obj, name, icon), "command_topic": f"{p}/{obj}/set",
                                       "state_topic": f"{p}/{obj}", "min": 0, "max": 100, "step": 1,
@@ -240,6 +241,7 @@ class MqttBruecke:
             "ambiente": an(z.zustand.ambiente_an),
             "ereignisse": an(z.zustand.ereignisse_an),
             "ki": an(z.zustand.ki_an),
+            "regie": an(z.zustand.regie_an),
             "hell": str(z.zustand.licht.hell),
             "lautst": str(z.einst.ton.master),
             "grusel": str(z.zustand.gruselstufe),
@@ -287,6 +289,8 @@ class MqttBruecke:
                 z.ereignisse_schalten(wert == "ON")
             elif obj == "ki":
                 z.ki_schalten(wert == "ON")
+            elif obj == "regie":
+                z.regie_schalten(wert == "ON")
             elif obj == "hell":
                 await z.licht_aendern(hell=int(float(wert)))
             elif obj == "lautst":

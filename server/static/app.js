@@ -131,6 +131,13 @@ function empfangen(m) {
       kiStatus.besuch = m;
       aktualisieren(["ki"]);
       break;
+    case "regie":
+      if (kiStatus.regie) {
+        kiStatus.regie.verlauf.unshift(m.eintrag);
+        kiStatus.regie.verlauf.length = Math.min(kiStatus.regie.verlauf.length, 15);
+      }
+      aktualisieren(["ki"]);
+      break;
     case "log":
       S.protokoll.unshift(m);
       S.protokoll.length = Math.min(S.protokoll.length, 60);
@@ -365,6 +372,10 @@ bereich("show-steuerung", "show", ["zustand", "daten"], () => {
       <div class="schalter-zeile">
         <div>KI-Stimme<small>${z.ki_an ? "spricht Besucher an, die die Kameras sehen" : "aus – Kameras lösen normale Stimmen-Sounds aus"}</small></div>
         ${schalter("ki", z.ki_an)}
+      </div>
+      <div class="schalter-zeile">
+        <div>KI-Regisseur<small>${z.regie_an ? "wählt bei Besuchern die Effekte passend zur Lage" : "aus – Effekte wie bisher"}</small></div>
+        ${schalter("regie", z.regie_an)}
       </div>` : ""}
       <h3 style="margin-top:12px">Gruselstufe ${auto ? '<span class="marke lila">automatisch nach Uhrzeit</span>' : ""}</h3>
       <div class="segmente">
@@ -1469,6 +1480,7 @@ function aendern(el, live) {
     case "ambiente": return api("POST", "/api/ambiente", { an: wert });
     case "ereignisse": return api("POST", "/api/ereignisse", { an: wert });
     case "ki": return api("POST", "/api/ki", { an: wert });
+    case "regie": return api("POST", "/api/regie", { an: wert });
     case "hell": return schicke(() => api("POST", "/api/licht", { hell: wert }));
     case "musik-reaktiv": return schicke(() => api("POST", "/api/licht", { musik_reaktiv: wert }));
     case "lautst": return schicke(() => api("PUT", "/api/einstellungen/ton", { master: wert }));
@@ -1539,6 +1551,10 @@ bereich("ki-kopf", "ki", ["ki", "zustand", "daten"], () => {
         <div>KI-Stimme<small>${z.ki_an ? "spricht Besucher an, die die Kameras sehen" : "aus – KI-Auslöser spielen ihren Ersatz"}</small></div>
         ${schalter("ki", z.ki_an)}
       </div>
+      <div class="schalter-zeile">
+        <div>KI-Regisseur<small>${z.regie_an ? "wählt während eines Besuchs die Effekte (Musik bleibt)" : "aus – während eines Besuchs nur die Stimme, Zufallseffekte pausieren"}</small></div>
+        ${schalter("regie", z.regie_an)}
+      </div>
       <div class="knopfreihe" style="flex-wrap:wrap;gap:6px">
         ${dienst(kiStatus.llm, "Sprachmodell")} ${dienst(kiStatus.tts, "Stimme")}
         ${kiStatus.laeuft ? '<span class="marke lila">denkt gerade nach …</span>' : ""}
@@ -1568,6 +1584,23 @@ bereich("ki-besuch", "ki", ["ki", "daten"], () => {
       </div>
       <p class="hinweis">Pro Besuch: höchstens ${k.locken_max}× locken, einmal zum Klingeln auffordern, nach dem Klingeln ${Math.round(k.tuer_ruhe_s / 60)} min still,
         wer geht wird ${k.abschied ? "verabschiedet" : "in Ruhe gelassen"} und nie zurückgelockt. Zufallsereignisse pausieren während eines Besuchs.</p>
+    </div>`;
+});
+
+bereich("ki-regie", "ki", ["ki", "zustand"], () => {
+  const r = kiStatus.regie;
+  if (!r) return "";
+  const optionen = Object.entries(r.optionen || {}).filter(([id]) => id !== "keiner");
+  return `
+    <div class="karte">
+      <h2>🎬 Regisseur <span class="marke ${r.aktiv ? "orange" : ""}">${S.zustand.regie_an ? (r.aktiv ? "an" : "an, wartet (Show/KI aus oder Pause)") : "aus"}</span></h2>
+      <p class="hinweis">Während eines Besuchs wählt die KI die Effekte: nach jedem Satz eine Pointe (oder nichts) und in Pausen
+        frühestens alle ${S.einstellungen.ki.regie_abstand_s} s. Zur Auswahl stehen die aktiven Zufallsregeln der aktuellen Gruselstufe
+        (Sounds bis ${S.einstellungen.ki.regie_max_s} s) und reine Licht-Effekte. Nach dem Klingeln und während Szenen hält sie still.</p>
+      <p class="hinweis">Auswahl jetzt: ${optionen.map(([id]) => esc(id)).join(", ") || "–"}</p>
+      <ul class="protokoll">
+        ${r.verlauf.map((e) => `<li class="${e.grund.startsWith("Fehler") ? "fehler" : ""}"><time>${zeit(e.zeit)}</time><span><b>${esc(e.effekt || "–")}</b> · ${esc(e.anlass)}${e.grund ? `<br><small>${esc(e.grund)} (${e.ms} ms)</small>` : ""}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
+      </ul>
     </div>`;
 });
 
@@ -1648,6 +1681,11 @@ bereich("ki-einstellungen", "ki", ["daten"], () => {
         ${feld("neu_pruefen_s", "Neue Leute prüfen frühestens nach (s)", "number", ki.neu_pruefen_s, 'min="10" max="300"')}
       </div>
       ${kasten("abschied", "Beim Weggehen verabschieden", ki.abschied, "nie zurücklocken – nur ein Abschiedssatz")}
+      <h3>Regisseur</h3>
+      <div class="feldreihe">
+        ${feld("regie_abstand_s", "In Pausen frühestens alle (s)", "number", ki.regie_abstand_s, 'min="5" max="300"')}
+        ${feld("regie_max_s", "Sounds höchstens (s lang)", "number", ki.regie_max_s, 'min="2" max="60"')}
+      </div>
       <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`)
   ].join("");
 });

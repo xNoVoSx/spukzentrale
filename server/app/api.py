@@ -576,6 +576,12 @@ async def ki_schalten(request: Request, d: An):
     return {"ok": True}
 
 
+@router.post("/api/regie")
+async def regie_schalten(request: Request, d: An):
+    zentrale(request).regie_schalten(d.an)
+    return {"ok": True}
+
+
 @router.post("/api/ki/test")
 async def ki_test(request: Request, d: KiTest):
     """KI-Stimme sofort ausprobieren (ohne Sperrzeit), wartet auf das Ergebnis."""
@@ -589,7 +595,7 @@ async def ki_test(request: Request, d: KiTest):
 async def ki_status(request: Request):
     z = zentrale(request)
     return {"laeuft": z.ki.laeuft, "verlauf": list(z.ki.verlauf), "bild_zeit": z.ki.letztes_bild_zeit,
-            "besuch": z.besuch.info(), **await z.ki.dienste()}
+            "besuch": z.besuch.info(), "regie": z.regie.info(), **await z.ki.dienste()}
 
 
 @router.post("/api/ki/pause")

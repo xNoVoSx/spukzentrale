@@ -238,7 +238,7 @@ class KiStimme:
                          "ergebnis": "fehler", "grund": ""}
         zeiten = eintrag["zeiten"]
         self._melden({"t": "ki", "laeuft": True, "quelle": quelle})
-        if k.reaktion_kategorie and reaktion:
+        if k.reaktion_kategorie and reaktion and not self.z.regie.frei_in():
             # sofort ein kurzes Flüstern + Flackern: der Geist hat die Leute bemerkt, der Satz kommt gleich
             await self.z.fx_kategorie(k.reaktion_kategorie, vol)
         try:
@@ -277,7 +277,14 @@ class KiStimme:
             if self.abbrechen:
                 eintrag["ergebnis"], eintrag["grund"] = "abgebrochen", "inzwischen wurde geklingelt"
                 return "abgebrochen"
+            if self.z.regie.frei_in():
+                # ein Regie-Effekt läuft noch: erst danach sprechen (nie zwei Sachen übereinander)
+                await asyncio.sleep(min(self.z.regie.frei_in(), k.regie_max_s + 1))
+                if self.abbrechen:
+                    eintrag["ergebnis"], eintrag["grund"] = "abgebrochen", "inzwischen wurde geklingelt"
+                    return "abgebrochen"
             await self._abspielen(wav, vol)
+            self.z._hintergrund(self.z.regie.nach_satz(satz, wav_dauer_ms(wav)))
             eintrag["ergebnis"] = "gesagt"
             text = ", ".join(f"{n.capitalize()} {v}" for n, v in zeiten.items())
             self.z.protokollieren(f"{quelle}: „{satz}“ ({text} s)", "fx")

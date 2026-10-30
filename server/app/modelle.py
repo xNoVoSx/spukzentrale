@@ -94,6 +94,7 @@ class Zustand(BaseModel):
     ambiente_an: bool = False
     ereignisse_an: bool = False
     ki_an: bool = True             # KI-Stimme; aus = KI-Auslöser spielen ihren Ersatz-Sound
+    regie_an: bool = False         # KI-Regisseur wählt während eines Besuchs die Effekte (regie.py)
     gruselstufe: int = Field(2, ge=1, le=3)
     stimmung_id: str | None = None
 
@@ -356,6 +357,9 @@ class KiEinst(BaseModel):
     besuch_ende_s: int = Field(60, ge=10, le=600)     # so lange keine Person -> Besuch vorbei
     nachlauf_s: int = Field(90, ge=0, le=600)         # danach Nachlauf: Leute auf dem Rückweg nicht zurücklocken
     neu_pruefen_s: int = Field(30, ge=10, le=300)     # geht/Nachlauf: frühestens dann prüfen, ob Neue kommen
+    # Regisseur (Zustand.regie_an)
+    regie_abstand_s: int = Field(15, ge=5, le=300)    # in Pausen frühestens so oft ein Effekt
+    regie_max_s: int = Field(10, ge=2, le=60)         # längere Sounds nimmt der Regisseur nicht
 
 
 class Mqtt(BaseModel):

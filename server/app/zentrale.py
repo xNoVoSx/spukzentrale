@@ -22,6 +22,7 @@ from .ambiente import Ambiente
 from .geraete import Geraet, Geraete
 from .besuch import LOCKEN, TUER, Besuch
 from .ki import KiStimme
+from .regie import Regie
 from .licht import EspLicht, LichtAusgang
 from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
 from . import musikanalyse
@@ -70,6 +71,7 @@ class Zentrale:
         self.beobachter: list[Callable[[str], None]] = []  # z. B. MQTT: bei Änderungen benachrichtigen
         self.ki = KiStimme(self)
         self.besuch = Besuch(self)
+        self.regie = Regie(self)
         self._ki_tasks: set[asyncio.Task] = set()
 
         # werden in main.py gesetzt (brauchen die Zentrale selbst)
@@ -580,6 +582,12 @@ class Zentrale:
         self.zustand.ki_an = an
         self.speichern("zustand")
         self.protokollieren(f"KI-Stimme {'an' if an else 'aus – KI-Auslöser spielen Ersatz-Sounds'}", "info")
+        self._zustand_geaendert()
+
+    def regie_schalten(self, an: bool) -> None:
+        self.zustand.regie_an = an
+        self.speichern("zustand")
+        self.protokollieren(f"KI-Regisseur {'an – wählt bei Besuchern die Effekte' if an else 'aus'}", "info")
         self._zustand_geaendert()
 
     def gruselstufe(self, stufe: int) -> None:
