@@ -21,6 +21,7 @@ from .modelle import (
     Ausloeser, Effekt, Ereignisse, Kategorie, LichtAktion, Musikstueck, Playlist, Stimmung, Szene, Zone, neue_id,
 )
 from .vorgaben import LICHT_JE_KATEGORIE
+from .ki import bild_typ
 from .zentrale import Zentrale
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,11 @@ class KiTest(BaseModel):
 
 class An(BaseModel):
     an: bool
+
+
+class TestSensor(BaseModel):
+    rolle: Literal["fern", "nah", "klingel"]
+    an: bool = True
 
 
 class LichtAenderung(BaseModel):
@@ -591,6 +597,60 @@ async def ki_test(request: Request, d: KiTest):
     return {"ergebnis": await z.ki.ansprechen(d.kamera, quelle="KI-Test", lage=d.hinweis)}
 
 
+# ---------------------------------------------------------------------------
+# PC-Test: Sensoren von Hand auslösen, Testbild statt Kamera (der Browser spielt dabei den Pi, siehe test.js)
+# ---------------------------------------------------------------------------
+@router.get("/api/test")
+async def test_info(request: Request):
+    z = zentrale(request)
+    return {"testbild": z.ki.testbild is not None,
+            "rollen": {r: next((a.name for a in z.einst.ausloeser if a.aktiv and a.rolle == r), None)
+                       for r in ("fern", "nah", "klingel")}}
+
+
+@router.post("/api/test/sensor")
+async def test_sensor(request: Request, d: TestSensor):
+    """Wie ein Personensensor bzw. die Klingel in Home Assistant: läuft genau den echten Weg (inkl. Sperren)."""
+    z = zentrale(request)
+    a = next((a for a in z.einst.ausloeser if a.aktiv and a.rolle == d.rolle), None)
+    if a is None:
+        raise HTTPException(404, f"Kein aktiver Auslöser mit der Rolle „{d.rolle}“")
+    if not d.an:
+        z.ausloeser_aus(a.id)
+        return {"ausgeloest": False}
+    return {"ausgeloest": await z.ausloeser(a.id, f"Test: {a.name}")}
+
+
+@router.post("/api/test/bild")
+async def test_bild(request: Request, datei: Annotated[UploadFile, File()]):
+    daten = await datei.read(8 * 1024 * 1024 + 1)
+    if len(daten) > 8 * 1024 * 1024:
+        raise HTTPException(413, "Bild zu groß (höchstens 8 MB)")
+    if not (daten[:3] == b"\xff\xd8\xff" or bild_typ(daten) != "image/jpeg"):
+        raise HTTPException(400, "Bitte ein JPG-, PNG- oder WebP-Bild")
+    z = zentrale(request)
+    z.ki.testbild = daten
+    z.protokollieren("PC-Test: KI sieht jetzt das Testbild statt der Kamera", "info")
+    return {"testbild": True}
+
+
+@router.delete("/api/test/bild")
+async def test_bild_weg(request: Request):
+    z = zentrale(request)
+    if z.ki.testbild is not None:
+        z.ki.testbild = None
+        z.protokollieren("PC-Test: KI sieht wieder die Kamera", "info")
+    return {"testbild": False}
+
+
+@router.get("/api/test/bild")
+async def test_bild_zeigen(request: Request):
+    bild = zentrale(request).ki.testbild
+    if bild is None:
+        raise _nicht_gefunden("Ein Testbild")
+    return Response(bild, media_type=bild_typ(bild), headers={"Cache-Control": "no-store"})
+
+
 @router.get("/api/ki/status")
 async def ki_status(request: Request):
     z = zentrale(request)
@@ -611,7 +671,7 @@ async def ki_bild(request: Request):
     bild = zentrale(request).ki.letztes_bild
     if bild is None:
         raise _nicht_gefunden("Ein Bild")
-    return Response(bild, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    return Response(bild, media_type=bild_typ(bild), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/ki/live/{kamera}")
@@ -623,7 +683,7 @@ async def ki_live(request: Request, kamera: str):
         bild = await zentrale(request).ki.live_bild(kamera)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Standbild: {e}") from e
-    return Response(bild, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    return Response(bild, media_type=bild_typ(bild), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/geraet/sprache/{sid}")

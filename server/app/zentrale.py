@@ -265,6 +265,8 @@ class Zentrale:
     def geraet_name(g: Geraet | None, rolle: str) -> str:
         """Anzeigename: Seit 1.3 kann hinter „sound“ der Raspberry Pi stehen und der Licht-ESP am USB des Pi hängen."""
         h = g.hallo if g else {}
+        if h.get("plattform") == "browser":
+            return f"PC-Test im Browser ({'Sound' if rolle == 'sound' else 'Licht'})"
         if rolle == "sound":
             return "Sound (Raspberry Pi)" if h.get("plattform") == "pi" else "Sound-ESP"
         return "Licht-ESP (USB am Pi)" if h.get("verbindung") == "usb" else "Licht-ESP"

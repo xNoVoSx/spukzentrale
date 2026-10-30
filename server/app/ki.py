@@ -136,6 +136,7 @@ class KiStimme:
         self.verlauf: collections.deque[dict] = collections.deque(maxlen=VERLAUF)
         self.letztes_bild: bytes | None = None   # nur im Speicher, für die KI-Zentrale
         self.letztes_bild_zeit = 0.0
+        self.testbild: bytes | None = None       # PC-Test: dieses Bild statt der Kamera (nur im Speicher)
 
     # ------------------------------------------------------------------
     def wav(self, sid: str) -> bytes | None:
@@ -150,6 +151,8 @@ class KiStimme:
 
     # ------------------------------------------------------------------
     async def _standbild(self, c: httpx.AsyncClient, kamera: str, breite: int | None = None) -> bytes:
+        if self.testbild:
+            return self.testbild
         ha = self.z.einst.homeassistant
         if not (ha.url and ha.token):
             raise KiFehler("Home Assistant ist nicht eingerichtet")
@@ -180,7 +183,7 @@ class KiStimme:
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": [
                     {"type": "image_url",
-                     "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(bild).decode()}},
+                     "image_url": {"url": f"data:{bild_typ(bild)};base64," + base64.b64encode(bild).decode()}},
                     {"type": "text", "text": "\n".join(hinweis)},
                 ]},
             ],
@@ -347,6 +350,14 @@ class KiStimme:
         await sound.senden(nachricht)
         if licht and not per_kabel:
             await self.z.licht.aktion(licht, self.z.ton_effektiv().latenz_ms, dauer_ms + 300)
+
+
+def bild_typ(bild: bytes) -> str:
+    if bild[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if bild[:4] == b"RIFF" and bild[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/jpeg"
 
 
 def wav_dauer_ms(wav: bytes) -> int:

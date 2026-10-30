@@ -1531,8 +1531,9 @@ const KI_ERGEBNIS = { gesagt: ["gesagt", "orange"], niemand: ["kein Mensch", ""]
 
 async function kiLaden() {
   try {
+    const vorher = (kiStatus.tts?.stimmen || []).join();
     kiStatus = await api("GET", "/api/ki/status");
-    aktualisieren(["ki"]);
+    aktualisieren((kiStatus.tts?.stimmen || []).join() === vorher ? ["ki"] : ["ki", "ki-stimmen"]);
   } catch { /* Toast kommt von api() */ }
 }
 setInterval(() => { if (seite === "ki" && !document.hidden) kiLaden(); }, 10000);
@@ -1653,7 +1654,7 @@ bereich("ki-verlauf", "ki", ["ki"], () => `
     </ul>
   </div>`);
 
-bereich("ki-einstellungen", "ki", ["daten"], () => {
+bereich("ki-einstellungen", "ki", ["daten", "ki-stimmen"], () => {
   const ki = S.einstellungen.ki;
   return [
     abschnitt("e-ki", "⚙️ Einstellungen der KI", "ki", `
@@ -1661,7 +1662,7 @@ bereich("ki-einstellungen", "ki", ["daten"], () => {
         (Kostüm, Gegenstände, Gruppe). Braucht ein Bild-Sprachmodell mit OpenAI-kompatibler API (z. B. llama-server mit
         Gemma 3) und den Sprach-Dienst <code>ki/stimme.py</code>. Das Bild wird nicht gespeichert.</p>
       <div class="feldreihe">${feld("llm_url", "Sprachmodell (Adresse)", "url", ki.llm_url, 'placeholder="http://192.168.1.50:8091"')}${feld("modell", "Modell (leer = geladenes)", "text", ki.modell)}</div>
-      <div class="feldreihe">${feld("tts_url", "Sprach-Dienst (Adresse)", "url", ki.tts_url, 'placeholder="http://192.168.1.50:8092"')}${auswahl("stimme", "Stimme", [["maedchen", "Geistermädchen"], ["daemon", "Dämon"]], ki.stimme)}</div>
+      <div class="feldreihe">${feld("tts_url", "Sprach-Dienst (Adresse)", "url", ki.tts_url, 'placeholder="http://192.168.1.50:8092"')}${auswahl("stimme", "Stimme", [...new Set([ki.stimme, ...(kiStatus.tts?.stimmen || ["maedchen", "daemon"])])].map((n) => [n, n.replaceAll("_", " ")]), ki.stimme)}</div>
       <label class="feld"><span>Eigene Vorgaben fürs Modell (optional)</span><textarea name="zusatz" rows="2" maxlength="500" placeholder="z. B. Erwähne die Spukzentrale. Sprich Kinder besonders freundlich an.">${esc(ki.zusatz)}</textarea></label>
       <div class="feldreihe">
         ${feld("vol", "Lautstärke %", "number", ki.vol, 'min="0" max="100"')}
