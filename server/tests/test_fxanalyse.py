@@ -72,3 +72,15 @@ def test_nachbearbeiten_kuerzt_alte_sounds_und_passt_szenen_an(monkeypatch):
         assert z.medien.fx(neu.id).text == "Wolfsrudel in der Ferne"
         z.medien.fx_loeschen(neu.id)
         z.szenen.liste.pop()
+
+
+def test_gleicher_name_wird_nicht_doppelt_hochgeladen(tmp_path):
+    q = tmp_path / "gleich.wav"
+    _ton(q, "sine=f=300:d=1")
+    with TestClient(app) as c:
+        z = app.state.zentrale
+        a = c.post("/api/fx", files={"datei": ("eule-ruft.wav", q.read_bytes(), "audio/wav")}, data={"kategorie": "tiere"}).json()
+        _ton(q, "sine=f=500:d=2")          # anderer Inhalt, gleicher Dateiname
+        b = c.post("/api/fx", files={"datei": ("eule-ruft.wav", q.read_bytes(), "audio/wav")}, data={"kategorie": "tiere"}).json()
+        assert a["id"] == b["id"] and sum(f.name == a["name"] for f in z.medien.daten.fx) == 1
+        z.medien.fx_loeschen(a["id"])

@@ -479,6 +479,12 @@ async def fx_hochladen(
     name: Annotated[str, Form()] = "",
 ):
     z = zentrale(request)
+    # schon da (gleicher Name)? Dann nicht doppelt anlegen – der Inhalt allein erkennt das nicht mehr sicher,
+    # seit Stille am Ende abgeschnitten wird (alter, ungekürzter Sound ≠ neu hochgeladener)
+    anzeige = (name.strip() or _anzeigename(datei.filename))[:60]
+    vorhanden = next((f for f in z.medien.daten.fx if f.name == anzeige), None)
+    if vorhanden:
+        return vorhanden
     roh = await _hochladen(datei, FX_MAX_MB)
     try:
         fid, dauer_ms, groesse = await fx_umwandeln(roh)
