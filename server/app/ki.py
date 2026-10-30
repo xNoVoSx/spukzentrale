@@ -46,7 +46,8 @@ SYSTEM = (
     "keine Sternchen. Natürliche gesprochene Sprache, gern mit einer kurzen Pause (...). "
     "Sprich nur, wenn mindestens ein Mensch deutlich zu sehen ist – Fahrzeuge, Tiere, Gegenstände oder Deko "
     "allein zählen nicht.\n"
-    "Antworte als JSON: {\"mensch\": true/false, \"satz\": der gesprochene Satz, leer wenn kein Mensch zu sehen ist, "
+    "Antworte als JSON: {\"mensch\": true/false, \"richtung\": kommt (aufs Haus bzw. die Kamera zu), geht (weg vom "
+    "Haus, Rücken zur Kamera), steht oder unklar, \"satz\": der gesprochene Satz, leer wenn kein Mensch zu sehen ist, "
     "\"beschreibung\": sachliche Beschreibung in höchstens 25 Wörtern, was du siehst (Anzahl Personen, Kostüme bzw. "
     "Kleidung, Gegenstände, wo im Bild sie stehen – nur Äußeres der Verkleidung, keine Körpermerkmale)}\n"
     "Beispiele für den Stil:\n"
@@ -80,12 +81,14 @@ ANTWORT_SCHEMA = {
     "type": "object",
     "properties": {
         "mensch": {"type": "boolean"},
+        "richtung": {"type": "string", "enum": ["kommt", "geht", "steht", "unklar"]},
         "satz": {"type": "string"},
         "beschreibung": {"type": "string"},
     },
-    "required": ["mensch", "satz", "beschreibung"],
+    "required": ["mensch", "richtung", "satz", "beschreibung"],
 }
-SATZ_FERTIG = re.compile(r'"mensch"\s*:\s*(true|false)\s*,\s*"satz"\s*:\s*"((?:[^"\\]|\\.)*)"')
+SATZ_FERTIG = re.compile(r'"mensch"\s*:\s*(true|false)\s*,\s*(?:"richtung"\s*:\s*"[^"]*"\s*,\s*)?'
+                         r'"satz"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
 
 def satz_aus_teil(text: str) -> str | None:
@@ -101,6 +104,11 @@ def satz_aus_teil(text: str) -> str | None:
         return None
     satz = satz_bereinigen(satz)
     return "" if satz == "-" else satz
+
+
+def richtung_lesen(text: str) -> str:
+    m = re.search(r'"richtung"\s*:\s*"(kommt|geht|steht)"', text or "")
+    return m.group(1) if m else "unklar"
 
 
 def antwort_lesen(text: str) -> tuple[str, str]:
@@ -123,6 +131,7 @@ class KiStimme:
         self.letzte: collections.deque[str] = collections.deque(maxlen=LETZTE)
         self.sprache: collections.OrderedDict[str, bytes] = collections.OrderedDict()
         self.laeuft = False
+        self.abbrechen = False   # z. B. geklingelt, während die KI noch nachdenkt -> nicht mehr sprechen
         self.verlauf: collections.deque[dict] = collections.deque(maxlen=VERLAUF)
         self.letztes_bild: bytes | None = None   # nur im Speicher, für die KI-Zentrale
         self.letztes_bild_zeit = 0.0
@@ -151,8 +160,8 @@ class KiStimme:
         return r.content
 
     async def _satz(self, c: httpx.AsyncClient, bild: bytes, lage: str = "",
-                    bei_satz: Callable[[str], None] | None = None) -> tuple[str, str]:
-        """(Beschreibung, Satz) – Satz leer, wenn kein Mensch zu sehen ist.
+                    bei_satz: Callable[[str], None] | None = None) -> tuple[str, str, str]:
+        """(Beschreibung, Satz, Richtung) – Satz leer, wenn kein Mensch zu sehen ist.
 
         Liest die Antwort als Stream: bei_satz(satz) kommt, sobald der Satz fertig ist – die Beschreibung danach.
         """
@@ -199,7 +208,7 @@ class KiStimme:
                     if satz is not None:
                         gemeldet = True
                         bei_satz(satz)
-        return antwort_lesen(text)
+        return (*antwort_lesen(text), richtung_lesen(text))
 
     async def _sprechen(self, c: httpx.AsyncClient, text: str) -> bytes:
         k = self.z.einst.ki
@@ -220,9 +229,10 @@ class KiStimme:
         if self.laeuft:
             return "beschaeftigt"
         self.laeuft = True
+        self.abbrechen = False
         t0 = time.monotonic()
         eintrag: dict = {"zeit": time.time(), "quelle": quelle, "kamera": kamera, "satz": "", "beschreibung": "",
-                         "zeiten": {},
+                         "richtung": "unklar", "zeiten": {},
                          "ergebnis": "fehler", "grund": ""}
         zeiten = eintrag["zeiten"]
         self._melden({"t": "ki", "laeuft": True, "quelle": quelle})
@@ -246,17 +256,20 @@ class KiStimme:
                         satz = satz_da.result() if satz_da.done() else denken.result()[1]
                         zeiten["text"] = round(time.monotonic() - t0, 1)
                         if len(satz) < 4:
-                            eintrag["beschreibung"] = (await denken)[0]
+                            eintrag["beschreibung"], _, eintrag["richtung"] = await denken
                             eintrag["ergebnis"] = "niemand"
                             self.z.protokollieren(f"{quelle}: kein Mensch zu erkennen", "info")
                             return "niemand"
                         eintrag["satz"] = satz
                         wav = await self._sprechen(c, satz)
                         zeiten["stimme"] = round(time.monotonic() - t0, 1)
-                        eintrag["beschreibung"] = (await denken)[0]
+                        eintrag["beschreibung"], _, eintrag["richtung"] = await denken
                     finally:
                         denken.cancel()
             self.letzte.append(satz)
+            if self.abbrechen:
+                eintrag["ergebnis"], eintrag["grund"] = "abgebrochen", "inzwischen wurde geklingelt"
+                return "abgebrochen"
             await self._abspielen(wav, vol)
             eintrag["ergebnis"] = "gesagt"
             text = ", ".join(f"{n.capitalize()} {v}" for n, v in zeiten.items())

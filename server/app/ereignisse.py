@@ -66,7 +66,8 @@ class Generator:
             if z.zustand.gruselstufe < r.gruselstufe_min:
                 self.naechstes[r.id] = jetzt + self._abstand(r)
                 continue
-            beschaeftigt = (z.spieler and z.spieler.laufend) or jetzt - self.letztes < z.ereignisse.min_abstand_s
+            beschaeftigt = ((z.spieler and z.spieler.laufend) or jetzt - self.letztes < z.ereignisse.min_abstand_s
+                            or z.besuch.aktiv)       # Besucher werden angesprochen: kein Donner dazwischen
             if beschaeftigt:
                 self.naechstes[r.id] = jetzt + random.uniform(5, 20)
                 continue

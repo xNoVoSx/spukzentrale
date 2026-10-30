@@ -39,3 +39,12 @@ Das Modell antwortet als JSON mit Beschreibung und Satz.
 
 Test ohne Server: `curl -X POST localhost:8092/sprechen -H 'Content-Type: application/json'
 -d '{"text":"Komm näher.","stimme":"daemon"}' -o test.wav`
+
+## Besuchs-Ablauf
+
+Auslöser vom Typ KI bekommen eine Rolle: **Weg** (fern, lockt näher), **Haustür** (nah, fordert zum Klingeln auf);
+der Klingel-Auslöser bekommt die Rolle **Klingel**. Der Server fasst die Erkennungen zu einem Besuch zusammen
+(`server/app/besuch.py`): höchstens 2× locken (einmal sanft nachfassen, wenn sie stehen bleiben), einmal zum Klingeln
+auffordern, nach dem Klingeln 3 min still, wer geht wird verabschiedet und nie zurückgelockt, danach Nachlauf.
+Es spricht immer nur eine Stimme, während Szenen schweigt die KI, Zufallsereignisse pausieren während eines Besuchs.
+„Pause 10 min“ im Reiter KI, wenn ihr selbst rausgeht.

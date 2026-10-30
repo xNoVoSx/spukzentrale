@@ -295,6 +295,8 @@ class Ausloeser(BaseModel):
     hinweis: str = Field("", max_length=300)  # nur "ki": Lage für das Modell (z. B. „noch weit weg“)
     # nur "ki": was stattdessen passiert, wenn die KI aus ist, keinen Menschen sieht oder nicht antwortet
     ersatz_typ: Literal["kategorie", "szene"] = "kategorie"
+    # Rolle im Besuchs-Ablauf (KI): fern = Weg (lockt), nah = Haustür (fordert zum Klingeln auf), klingel = Taster
+    rolle: Literal["", "fern", "nah", "klingel"] = ""
     ersatz_ziel: str = ""          # leer = Ersatz-Kategorie aus den KI-Einstellungen
     vol: int = Field(100, ge=0, le=100)
     sperre_s: int = Field(60, ge=0, le=3600)
@@ -346,6 +348,13 @@ class KiEinst(BaseModel):
     bildbreite: int = Field(896, ge=256, le=2048)
     ersatz_kategorie: str = "stimme"          # leer = bei Fehlern nichts abspielen
     reaktion_kategorie: str = "reaktion"      # sofort beim Auslösen (kurzes Flüstern), leer = aus
+    # Besuchs-Ablauf (Auslöser mit Rolle fern/nah/klingel)
+    locken_max: int = Field(2, ge=1, le=5)            # so oft höchstens locken pro Besuch
+    locken_wiederholen_s: int = Field(30, ge=10, le=300)
+    abschied: bool = True                             # beim Weggehen verabschieden (nie zurücklocken)
+    tuer_ruhe_s: int = Field(180, ge=0, le=1800)      # nach dem Klingeln still (ihr redet an der Tür)
+    besuch_ende_s: int = Field(60, ge=10, le=600)     # so lange keine Person -> Besuch vorbei
+    nachlauf_s: int = Field(90, ge=0, le=600)         # danach noch still (Leute auf dem Rückweg)
 
 
 class Mqtt(BaseModel):

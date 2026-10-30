@@ -52,8 +52,8 @@ def client(monkeypatch):
     async def satz(self, c, bild, lage="", bei_satz=None):
         aufrufe.append(("satz", lage))
         if self.z.einst.ki.zusatz == "leer":
-            return "Leerer Weg mit Fahrradanhänger.", ""
-        return "Ein Kind als Skelett mitten auf dem Weg.", "Hey du da, kleines Skelett!"
+            return "Leerer Weg mit Fahrradanhänger.", "", "unklar"
+        return "Ein Kind als Skelett mitten auf dem Weg.", "Hey du da, kleines Skelett!", getattr(self.z, "_test_richtung", "kommt")
 
     async def sprechen(self, c, text):
         aufrufe.append(("sprechen", text))

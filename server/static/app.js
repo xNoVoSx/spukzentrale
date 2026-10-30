@@ -23,7 +23,7 @@ let haKameras = null;      // Kameras aus Home Assistant (für die KI-Stimme)
 let entwurf = null;        // Szene im Editor
 let regelEntwurf = null;   // Ereignis-Regeln im Editor
 let ausloeserEntwurf = null; // Auslöser im Editor
-let kiStatus = { laeuft: false, verlauf: [], llm: null, tts: null }; // KI-Zentrale
+let kiStatus = { laeuft: false, verlauf: [], llm: null, tts: null, besuch: null }; // KI-Zentrale
 let kiBildStand = 0;          // erzwingt neues „letztes Bild“
 let kiLive = "";              // Kamera im Live-Bild (leer = aus)
 const offeneDetails = new Set(["e-zeitplan"]);
@@ -125,6 +125,10 @@ function empfangen(m) {
         kiStatus.verlauf.length = Math.min(kiStatus.verlauf.length, 20);
         kiBildStand = Date.now();
       }
+      aktualisieren(["ki"]);
+      break;
+    case "besuch":
+      kiStatus.besuch = m;
       aktualisieren(["ki"]);
       break;
     case "log":
@@ -744,7 +748,10 @@ function ausloeserZeile(a, i) {
         <label class="feld"><span>Ersatz (KI aus / kein Mensch / Fehler)</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="ersatz_typ">${optionen([["kategorie", "Sound aus Kategorie"], ["szene", "Szene"]], a.ersatz_typ || "kategorie")}</select></label>
         <label class="feld"><span>${a.ersatz_typ === "szene" ? "Szene" : "Kategorie"}</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="ersatz_ziel">${optionen(a.ersatz_typ === "szene" ? S.szenen.map((s) => [s.id, s.name]) : [["", "wie in den KI-Einstellungen"], ...kategorien()], a.ersatz_ziel || "")}</select></label>
       </div>` : ""}
-      ${a.typ === "ki" ? `<label class="feld"><span>Lage für die KI (optional)</span><input type="text" maxlength="300" value="${esc(a.hinweis || "")}" placeholder="z. B. Die Leute sind noch weit weg auf dem Weg – locke sie näher." data-aenderung="ausloeser" data-i="${i}" data-feld="hinweis"></label>` : ""}
+      <label class="feld"><span>Rolle im KI-Besuch</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="rolle">${optionen(a.typ === "ki"
+        ? [["", "keine (immer gleich ansprechen)"], ["fern", "🚶 Weg – lockt näher"], ["nah", "🚪 Haustür – fordert zum Klingeln auf"]]
+        : [["", "keine"], ["klingel", "🔔 das ist die Klingel"]], a.rolle || "")}</select></label>
+      ${a.typ === "ki" && !a.rolle ? `<label class="feld"><span>Lage für die KI (optional)</span><input type="text" maxlength="300" value="${esc(a.hinweis || "")}" placeholder="z. B. Die Leute sind noch weit weg auf dem Weg – locke sie näher." data-aenderung="ausloeser" data-i="${i}" data-feld="hinweis"></label>` : ""}
       <div class="feldreihe">
         <label class="feld"><span>Sperrzeit danach (s)</span><input type="number" min="0" max="3600" value="${a.sperre_s}" data-aenderung="ausloeser" data-i="${i}" data-feld="sperre_s"></label>
         <label class="feld"><span>Ab Gruselstufe</span><select data-aenderung="ausloeser" data-i="${i}" data-feld="gruselstufe_min" data-typ="zahl">${optionen([[1, "1"], [2, "2"], [3, "3"]], a.gruselstufe_min)}</select></label>
@@ -1363,12 +1370,16 @@ const AKTIONEN = {
     const r = await api("POST", "/api/ki/test", { kamera, hinweis: a?.hinweis || "" });
     toast({ gesagt: "Gesagt", niemand: "Kein Mensch zu sehen", fehler: "Fehler – siehe Verlauf" }[r.ergebnis] || r.ergebnis);
   },
+  "ki-pause": async (el) => {
+    kiStatus.besuch = await api("POST", "/api/ki/pause", { minuten: Number(el.dataset.min) });
+    aktualisieren(["ki"]);
+  },
   "ki-live": () => {
     kiLive = kiLive ? "" : document.getElementById("ki-kamera")?.value || "";
     zeichne(BEREICHE.find((b) => b.id === "ki-live"));
   },
   "ausloeser-neu": () => {
-    ausloeserEntwurf.push({ id: "", name: "Neuer Auslöser", aktiv: true, entity_id: "", typ: "kategorie", ziel: "schrei", hinweis: "", vol: 100, sperre_s: 60, gruselstufe_min: 1, nur_wenn_an: true });
+    ausloeserEntwurf.push({ id: "", name: "Neuer Auslöser", aktiv: true, entity_id: "", typ: "kategorie", ziel: "schrei", hinweis: "", rolle: "", vol: 100, sperre_s: 60, gruselstufe_min: 1, nur_wenn_an: true });
     zeichne(BEREICHE.find((b) => b.id === "einst-ausloeser"));
   },
   "ausloeser-loeschen": (el) => {
@@ -1539,6 +1550,27 @@ bereich("ki-kopf", "ki", ["ki", "zustand", "daten"], () => {
     </div>`;
 });
 
+const BESUCH_SCHRITTE = [["gelockt", "🚶 Weg"], ["tuer", "🚪 Tür"], ["geklingelt", "🔔 Klingel"], ["geht", "👋 geht"]];
+bereich("ki-besuch", "ki", ["ki", "daten"], () => {
+  const b = kiStatus.besuch;
+  if (!b) return "";
+  const k = S.einstellungen.ki;
+  const pause = b.pause_bis ? Math.max(0, Math.round((b.pause_bis - Date.now() / 1000) / 60)) : 0;
+  return `
+    <div class="karte">
+      <h2>Besuch <span class="marke ${b.zustand === "leer" || b.zustand === "nachlauf" ? "" : "orange"}">${esc(b.text)}</span></h2>
+      <div class="segmente">${BESUCH_SCHRITTE.map(([z, t]) => `<button type="button" class="${b.zustand === z ? "aktiv" : ""}" disabled>${t}</button>`).join("")}</div>
+      <p class="hinweis">seit ${zeit(b.seit)} · gelockt ${b.gelockt}/${k.locken_max} · Tür ${b.tuer ? "✓" : "–"} · Abschied ${b.abschied ? "✓" : "–"}
+        · Sensor Weg ${b.fern ? "🟠" : "⚫"} · Tür ${b.nah ? "🟠" : "⚫"}</p>
+      <div class="knopfreihe">
+        ${pause ? `<span class="marke lila">Pause noch ${pause} min</span><button type="button" class="klein" data-aktion="ki-pause" data-min="0">Pause beenden</button>`
+          : `<button type="button" class="klein" data-aktion="ki-pause" data-min="10">⏸ Pause 10 min (wir gehen raus)</button>`}
+      </div>
+      <p class="hinweis">Pro Besuch: höchstens ${k.locken_max}× locken, einmal zum Klingeln auffordern, nach dem Klingeln ${Math.round(k.tuer_ruhe_s / 60)} min still,
+        wer geht wird ${k.abschied ? "verabschiedet" : "in Ruhe gelassen"} und nie zurückgelockt. Zufallsereignisse pausieren während eines Besuchs.</p>
+    </div>`;
+});
+
 bereich("ki-erkennung", "ki", ["ki"], () => {
   const e = kiStatus.verlauf[0];
   if (!e) return `<div class="karte"><h2>Letzte Erkennung</h2><p class="hinweis">Noch nichts erkannt.</p></div>`;
@@ -1548,7 +1580,7 @@ bereich("ki-erkennung", "ki", ["ki"], () => {
     <div class="karte">
       <h2>Letzte Erkennung <span class="marke ${farbe}">${text}</span></h2>
       ${kiStatus.bild_zeit || kiBildStand ? `<img class="ki-bild" src="/api/ki/bild?t=${kiBildStand || kiStatus.bild_zeit}" alt="Was die KI gesehen hat">` : ""}
-      <p class="hinweis">${zeit(e.zeit)} · ${esc(e.quelle)} · ${esc(e.kamera)}</p>
+      <p class="hinweis">${zeit(e.zeit)} · ${esc(e.quelle)} · ${esc(e.kamera)}${e.richtung && e.richtung !== "unklar" ? ` · ${{ kommt: "kommt näher", geht: "geht weg", steht: "steht" }[e.richtung] || esc(e.richtung)}` : ""}</p>
       <h3>Was sie sieht</h3>
       <p>${esc(e.beschreibung || "–")}</p>
       <h3>Was sie gesagt hat</h3>
@@ -1604,6 +1636,17 @@ bereich("ki-einstellungen", "ki", ["daten"], () => {
         ${auswahl("ersatz_kategorie", "Wenn die KI nicht kann", [["", "nichts abspielen"], ...kategorien()], ki.ersatz_kategorie)}
       </div>
       ${auswahl("reaktion_kategorie", "Sofort-Reaktion (kurzes Flüstern beim Erkennen)", [["", "aus"], ...kategorien()], ki.reaktion_kategorie)}
+      <h3>Besuch (Auslöser mit Rolle Weg/Tür/Klingel)</h3>
+      <div class="feldreihe">
+        ${feld("locken_max", "Höchstens so oft locken", "number", ki.locken_max, 'min="1" max="5"')}
+        ${feld("locken_wiederholen_s", "Nachfassen frühestens nach (s)", "number", ki.locken_wiederholen_s, 'min="10" max="300"')}
+        ${feld("tuer_ruhe_s", "Still nach dem Klingeln (s)", "number", ki.tuer_ruhe_s, 'min="0" max="1800"')}
+      </div>
+      <div class="feldreihe">
+        ${feld("besuch_ende_s", "Besuch vorbei nach (s ohne Person)", "number", ki.besuch_ende_s, 'min="10" max="600"')}
+        ${feld("nachlauf_s", "Danach noch still (s)", "number", ki.nachlauf_s, 'min="0" max="600"')}
+      </div>
+      ${kasten("abschied", "Beim Weggehen verabschieden", ki.abschied, "nie zurücklocken – nur ein Abschiedssatz")}
       <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`)
   ].join("");
 });

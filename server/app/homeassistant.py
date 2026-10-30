@@ -112,12 +112,15 @@ class HomeAssistant:
         while True:
             ha = self.z.einst.homeassistant
             beobachten = {a.id: a.entity_id for a in self.z.einst.ausloeser if a.aktiv and a.entity_id}
+            # Besuchs-Ablauf braucht auch „Person wieder weg“
+            aus = {a.id: a.entity_id for a in self.z.einst.ausloeser
+                   if a.aktiv and a.entity_id and a.typ == "ki" and a.rolle in ("fern", "nah")}
             if not (ha.url and ha.token):
                 self._status("aus")
                 return
             # auch ohne aktiven Auslöser verbinden: zeigt sofort, ob Adresse und Token stimmen
             try:
-                await self._verbinden(ha.url, ha.token, beobachten)
+                await self._verbinden(ha.url, ha.token, beobachten, aus)
                 warte = 5
             except asyncio.CancelledError:
                 raise
@@ -127,20 +130,23 @@ class HomeAssistant:
             await asyncio.sleep(warte)
             warte = min(warte * 2, 120)
 
-    async def _verbinden(self, url: str, token: str, beobachten: dict[str, str]) -> None:
-        """beobachten: Auslöser-ID -> entity_id"""
+    async def _verbinden(self, url: str, token: str, beobachten: dict[str, str],
+                         aus: dict[str, str] | None = None) -> None:
+        """beobachten: Auslöser-ID -> entity_id (auf „on“), aus: dasselbe für „off“ (Besuchs-Ablauf)"""
         ws = await _anmelden(url, token)
         ids = itertools.count(1)
         try:
             abos: dict[int, str] = {}  # Abo-ID -> Auslöser-ID
-            for aid, entity_id in beobachten.items():
-                nr = next(ids)
-                abos[nr] = aid
-                await ws.send(json.dumps({
-                    "id": nr,
-                    "type": "subscribe_trigger",
-                    "trigger": {"trigger": "state", "entity_id": entity_id, "to": "on"},
-                }))
+            abos_aus: dict[int, str] = {}
+            for liste, ziel, zustand in ((beobachten, abos, "on"), (aus or {}, abos_aus, "off")):
+                for aid, entity_id in liste.items():
+                    nr = next(ids)
+                    ziel[nr] = aid
+                    await ws.send(json.dumps({
+                        "id": nr,
+                        "type": "subscribe_trigger",
+                        "trigger": {"trigger": "state", "entity_id": entity_id, "to": zustand},
+                    }))
             self._status("verbunden" if beobachten else "verbunden – kein Auslöser aktiv")
             log.info("Home Assistant verbunden, beobachte %s", ", ".join(beobachten.values()) or "nichts")
             while True:
@@ -150,6 +156,9 @@ class HomeAssistant:
                     await ws.send(json.dumps({"id": next(ids), "type": "ping"}))
                     continue
                 msg = json.loads(roh)
+                if msg.get("type") == "event" and msg.get("id") in abos_aus:
+                    self.z.ausloeser_aus(abos_aus[msg["id"]])
+                    continue
                 aid = abos.get(msg.get("id"))
                 if not aid:
                     continue

@@ -38,6 +38,10 @@ def _nicht_gefunden(was: str) -> HTTPException:
     return HTTPException(404, f"{was} gibt es nicht")
 
 
+class KiPause(BaseModel):
+    minuten: float = Field(10, ge=0, le=240)
+
+
 class KiTest(BaseModel):
     kamera: str = Field(min_length=8, max_length=120, pattern=r"^camera\.[a-z0-9_]+$")
     hinweis: str = Field("", max_length=300)
@@ -585,7 +589,14 @@ async def ki_test(request: Request, d: KiTest):
 async def ki_status(request: Request):
     z = zentrale(request)
     return {"laeuft": z.ki.laeuft, "verlauf": list(z.ki.verlauf), "bild_zeit": z.ki.letztes_bild_zeit,
-            **await z.ki.dienste()}
+            "besuch": z.besuch.info(), **await z.ki.dienste()}
+
+
+@router.post("/api/ki/pause")
+async def ki_pause(request: Request, d: KiPause):
+    """Besuchs-Ablauf pausieren (z. B. wenn ihr selbst rausgeht), 0 = Pause beenden."""
+    zentrale(request).besuch.pause(d.minuten)
+    return zentrale(request).besuch.info()
 
 
 @router.get("/api/ki/bild")

@@ -20,6 +20,7 @@ from fastapi import WebSocket
 from . import VERSION, pfade
 from .ambiente import Ambiente
 from .geraete import Geraet, Geraete
+from .besuch import LOCKEN, TUER, Besuch
 from .ki import KiStimme
 from .licht import EspLicht, LichtAusgang
 from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
@@ -68,6 +69,7 @@ class Zentrale:
         self.analyse_laeuft: set[str] = set()
         self.beobachter: list[Callable[[str], None]] = []  # z. B. MQTT: bei Änderungen benachrichtigen
         self.ki = KiStimme(self)
+        self.besuch = Besuch(self)
         self._ki_tasks: set[asyncio.Task] = set()
 
         # werden in main.py gesetzt (brauchen die Zentrale selbst)
@@ -546,8 +548,20 @@ class Zentrale:
             self.generator.neu_planen()
         self._zustand_geaendert()
 
+    def _hintergrund(self, coro) -> None:
+        t = asyncio.create_task(coro, name="ki-stimme")
+        self._ki_tasks.add(t)
+        t.add_done_callback(self._ki_tasks.discard)
+
+    def ausloeser_aus(self, aid: str) -> None:
+        """Sensor eines Auslösers ist wieder aus (nur für den Besuchs-Ablauf interessant)."""
+        a = next((x for x in self.einst.ausloeser if x.id == aid), None)
+        if a and a.typ == "ki" and a.rolle in ("fern", "nah"):
+            self._hintergrund(self.besuch.sensor(a, False, a.name))
+
     async def _ki_ausloesen(self, a: Ausloeser, quelle: str) -> None:
-        if await self.ki.ansprechen(a.ziel, a.vol, quelle, a.hinweis) in ("niemand", "fehler"):
+        lage = a.hinweis or {"fern": LOCKEN, "nah": TUER}.get(a.rolle, "")
+        if await self.ki.ansprechen(a.ziel, a.vol, quelle, lage) in ("niemand", "fehler"):
             await self._ki_ersatz(a, f"{quelle} (Ersatz)")
 
     async def _ki_ersatz(self, a: Ausloeser, quelle: str) -> bool:
@@ -594,6 +608,14 @@ class Zentrale:
             raise KeyError(aid)
         quelle = quelle or a.name
         jetzt = time.monotonic()
+        if a.rolle == "klingel" and pruefen:
+            self.besuch.klingel()
+        if a.typ == "ki" and a.rolle in ("fern", "nah") and self.zustand.ki_an and pruefen:
+            # Besuchs-Ablauf entscheidet selbst, ob und was gesagt wird (statt Sperrzeit)
+            if (a.nur_wenn_an and not self.zustand.licht.an) or self.zustand.gruselstufe < a.gruselstufe_min:
+                return False
+            self._hintergrund(self.besuch.sensor(a, True, quelle))
+            return True
         if pruefen:
             if a.nur_wenn_an and not self.zustand.licht.an:
                 return False
@@ -608,9 +630,7 @@ class Zentrale:
             if self.ki.laeuft:
                 return False
             # läuft im Hintergrund (Bild + Modell + Stimme dauern Sekunden), HA-Verbindung nicht aufhalten
-            t = asyncio.create_task(self._ki_ausloesen(a, quelle), name="ki-stimme")
-            self._ki_tasks.add(t)
-            t.add_done_callback(self._ki_tasks.discard)
+            self._hintergrund(self._ki_ausloesen(a, quelle))
             return True
         if a.typ == "kategorie":
             if not await self.fx_kategorie(a.ziel, a.vol, quelle=quelle):

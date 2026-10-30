@@ -1,0 +1,162 @@
+"""Besuchs-Ablauf: wer wann angesprochen wird – und vor allem, wann nicht."""
+import asyncio
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.besuch import ABSCHIED, LOCKEN, TUER
+from app.ki import KiStimme
+from app.main import app
+from app.modelle import Ausloeser
+
+
+@pytest.fixture
+def z(monkeypatch):
+    gesagt: list[str] = []
+
+    async def ansprechen(self, kamera, vol=100, quelle="", lage="", reaktion=True):
+        gesagt.append(lage)
+        self.verlauf.appendleft({"satz": f"Satz {len(gesagt)}", "richtung": self.z._richtung, "ergebnis": "gesagt"})
+        return "gesagt"
+
+    monkeypatch.setattr(KiStimme, "ansprechen", ansprechen)
+    with TestClient(app) as c:
+        zentrale = app.state.zentrale
+        zentrale._richtung = "kommt"
+        zentrale.gesagt = gesagt
+        zentrale.besuch.__init__(zentrale)        # sauberer Zustand
+        yield zentrale
+
+
+FERN = Ausloeser(id="f", name="fern", typ="ki", rolle="fern", ziel="camera.trackmix")
+NAH = Ausloeser(id="n", name="nah", typ="ki", rolle="nah", ziel="camera.klingel")
+
+
+def _vorspulen(b, s):
+    """Zeit vergehen lassen: alle monotonic-Merker nach hinten schieben."""
+    b.letzte_ansprache -= s
+    b.zuletzt_jemand -= s
+    b.klingel_zeit -= s
+    b.seit -= s
+
+
+def test_normaler_besuch_bis_zum_klingeln_und_abschied(z):
+    b = z.besuch
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert z.gesagt == [LOCKEN] and b.zustand == "gelockt"
+    asyncio.run(b.sensor(FERN, False, "fern"))
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    assert z.gesagt[-1] == TUER and b.zustand == "tuer"
+    asyncio.run(b.sensor(NAH, True, "nah"))                 # Sensor flattert: nicht nochmal
+    assert len(z.gesagt) == 2
+    b.klingel()
+    assert b.zustand == "geklingelt" and z.ki.abbrechen
+    asyncio.run(b.sensor(FERN, True, "fern"))               # gleich nach dem Klingeln: still (ihr redet)
+    assert len(z.gesagt) == 2
+    _vorspulen(b, z.einst.ki.tuer_ruhe_s + 1)
+    asyncio.run(b.sensor(FERN, True, "fern"))               # gehen wieder: Abschied, einmal
+    assert z.gesagt[-1] == ABSCHIED and b.zustand == "geht"
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert len(z.gesagt) == 3                               # nie zurücklocken
+
+
+def test_bleiben_stehen_hoechstens_einmal_nachfassen(z):
+    b = z.besuch
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    asyncio.run(b.takt(time.monotonic()))
+    assert len(z.gesagt) == 1                               # zu früh
+    _vorspulen(b, 31)
+    asyncio.run(b.takt(time.monotonic()))
+    assert len(z.gesagt) == 2 and "nicht näher gekommen" in z.gesagt[-1] and "Satz 1" in z.gesagt[-1]
+    _vorspulen(b, 31)
+    asyncio.run(b.takt(time.monotonic()))
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert len(z.gesagt) == 2                               # locken_max = 2
+
+
+def test_gehen_weg_werden_nicht_zurueckgelockt(z):
+    b = z.besuch
+    z._richtung = "geht"
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert b.zustand == "geht" and b.abschied_gesagt         # Modell hat sich laut Vorgabe verabschiedet
+    _vorspulen(b, 60)
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    asyncio.run(b.takt(time.monotonic()))
+    assert len(z.gesagt) == 1
+
+
+def test_an_der_tuer_ohne_klingeln_wieder_weg(z):
+    b = z.besuch
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    assert z.gesagt == [TUER]
+    asyncio.run(b.sensor(NAH, False, "nah"))
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert z.gesagt[-1] == ABSCHIED and b.zustand == "geht"
+
+
+def test_besuch_endet_und_naechster_beginnt(z):
+    b = z.besuch
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    asyncio.run(b.sensor(FERN, False, "fern"))
+    assert z.besuch.aktiv
+    _vorspulen(b, z.einst.ki.besuch_ende_s + 1)
+    asyncio.run(b.takt(time.monotonic()))
+    assert b.zustand == "nachlauf" and not b.aktiv
+    asyncio.run(b.sensor(FERN, True, "fern"))               # Leute auf dem Rückweg: still
+    asyncio.run(b.sensor(FERN, False, "fern"))
+    assert len(z.gesagt) == 1
+    _vorspulen(b, z.einst.ki.nachlauf_s + 1)
+    asyncio.run(b.takt(time.monotonic()))
+    assert b.zustand == "leer"
+    asyncio.run(b.sensor(FERN, True, "fern"))               # neue Gruppe
+    assert z.gesagt[-1] == LOCKEN and b.gelockt == 1
+
+
+def test_pause_und_szene_halten_die_ki_still(z):
+    b = z.besuch
+    b.pause(10)
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert z.gesagt == []
+    b.pause(0)
+    z.spieler.laufend = {"id": "schreck"}
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    assert z.gesagt == []
+    z.spieler.laufend = None
+
+
+def test_zufallsereignisse_pausieren_waehrend_besuch(z):
+    b = z.besuch
+    assert not b.aktiv
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert b.aktiv
+
+
+def test_api_status_und_pause():
+    with TestClient(app) as c:
+        r = c.post("/api/ki/pause", json={"minuten": 5})
+        assert r.json()["pause_bis"] > time.time()
+        assert c.post("/api/ki/pause", json={"minuten": 0}).json()["pause_bis"] == 0
+
+
+def test_ausloeser_mit_rolle_laufen_ueber_den_besuch(z):
+    z.ausloeser_setzen([FERN.model_copy(update={"aktiv": True, "sperre_s": 600}),
+                        NAH.model_copy(update={"aktiv": True}),
+                        Ausloeser(id="k", name="Klingel", aktiv=True, typ="szene", ziel="schreck", rolle="klingel")])
+    z.zustand.licht.an = True
+
+    async def ablauf():
+        assert await z.ausloeser("f") is True
+        await asyncio.gather(*z._ki_tasks)
+        assert await z.ausloeser("f") is True                 # keine Sperrzeit – der Besuch entscheidet
+        await asyncio.gather(*z._ki_tasks)
+        z.ausloeser_aus("f")
+        await asyncio.gather(*z._ki_tasks)
+        assert await z.ausloeser("k") is True                 # Klingel: Szene wie bisher + Besuch merkt es
+        await z.spieler.stoppen()
+
+    asyncio.run(ablauf())
+    assert z.gesagt == [LOCKEN] and not z.besuch.an["fern"] and z.besuch.zustand == "geklingelt"
+    z.zustand.ki_an = False                                     # KI aus: wieder ganz normaler Auslöser
+    assert asyncio.run(z.ausloeser("f")) in (True, False) and z.gesagt == [LOCKEN]
+    z.zustand.ki_an = True
