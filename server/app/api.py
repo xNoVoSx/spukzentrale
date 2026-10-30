@@ -677,8 +677,21 @@ async def test_sensor(request: Request, d: TestSensor):
         raise HTTPException(404, f"Kein aktiver Auslöser mit der Rolle „{d.rolle}“") from None
 
 
+class SimSchritt(BaseModel):
+    t: float = Field(ge=0, le=900)                        # Sekunde ab Start
+    aktion: Literal["szene", "fern", "nah", "klingel"]
+    wert: str | bool = True                               # szene: Beschreibung („“ = Kamera leer); sonst an/aus
+
+
 class SimulationStart(BaseModel):
-    drehbuch: str = Field(max_length=40)
+    drehbuch: str = Field("", max_length=40)              # festes Drehbuch – oder:
+    titel: str = Field("Freies Drehbuch", max_length=80)
+    schritte: list[SimSchritt] = Field(default_factory=list, max_length=200)
+    frisch: bool = True                                   # Besuch vorher zurücksetzen
+
+
+class TestSzene(BaseModel):
+    text: str = Field("", max_length=800)                 # leer = wieder die echte Kamera / kein Text
 
 
 @router.get("/api/test/simulation")
@@ -688,11 +701,23 @@ async def simulation_info(request: Request):
 
 @router.post("/api/test/simulation")
 async def simulation_start(request: Request, d: SimulationStart):
+    sim = zentrale(request).simulation
+    if d.schritte:
+        await sim.starten_frei(d.titel, [(s.t, s.aktion, s.wert) for s in d.schritte], d.frisch)
+        return sim.info()
     try:
-        await zentrale(request).simulation.starten(d.drehbuch)
+        await sim.starten(d.drehbuch)
     except KeyError:
         raise HTTPException(404, "Dieses Drehbuch gibt es nicht") from None
-    return zentrale(request).simulation.info()
+    return sim.info()
+
+
+@router.post("/api/test/szene")
+async def test_szene(request: Request, d: TestSzene):
+    """Live: was die KI „sieht“ (Beschreibung statt Kamerabild) – leer = wieder die echte Kamera."""
+    z = zentrale(request)
+    z.ki.testszene = d.text.strip() or None
+    return {"szene": z.ki.testszene or ""}
 
 
 @router.delete("/api/test/simulation")

@@ -1,5 +1,9 @@
 """PC-Test: Besuche simulieren – Sensoren schalten nach Drehbuch, die KI liest statt des Kamerabilds eine Beschreibung.
 
+Neben den festen Drehbüchern gibt es freie: ein Prüfer (Mensch oder KI-Agent) schickt eigene Schritte
+(POST /api/test/simulation mit „schritte“) – beliebige Gruppen, Zeiten, Chaos. Live geht es auch ohne Drehbuch:
+/api/test/szene setzt die Beschreibung, /api/test/sensor schaltet die Sensoren.
+
 Läuft genau über die echten Wege (Zentrale.test_sensor wie Home Assistant), dadurch reagieren Besuchs-Ablauf,
 KI-Stimme und Regisseur so wie draußen. Die Gruppen werden zufällig gewählt, damit jeder Durchlauf anders klingt.
 """
@@ -83,6 +87,7 @@ class Simulation:
         self.z = z
         self.task: asyncio.Task | None = None
         self.drehbuch = ""
+        self.titel = ""
         self.start = 0.0
         self.dauer = 0.0
         self.schritt = ""
@@ -92,7 +97,7 @@ class Simulation:
         return self.task is not None and not self.task.done()
 
     def info(self) -> dict:
-        return {"laeuft": self.laeuft, "drehbuch": self.drehbuch, "schritt": self.schritt,
+        return {"laeuft": self.laeuft, "drehbuch": self.drehbuch, "titel": self.titel, "schritt": self.schritt,
                 "vergangen": round(time.monotonic() - self.start) if self.laeuft else 0, "dauer": self.dauer,
                 "szene": self.z.ki.testszene or "",
                 "drehbuecher": {k: v[0] for k, v in DREHBUECHER.items()}}
@@ -100,9 +105,20 @@ class Simulation:
     async def starten(self, name: str) -> None:
         if name not in DREHBUECHER:
             raise KeyError(name)
+        titel, schritte = DREHBUECHER[name]
+        g, g2 = random.sample(GRUPPEN, 2)
+        schritte = [(t, a, w.format(g=g, g2=g2) if a == "szene" else w) for t, a, w in schritte]
+        await self._starten(name, titel, schritte, frisch=True, gruppe=g)
+
+    async def starten_frei(self, titel: str, schritte: list[tuple[float, str, object]], frisch: bool = True) -> None:
+        """Eigenes Drehbuch: Schritte (Sekunde, „szene“|„fern“|„nah“|„klingel“, Text bzw. an/aus)."""
+        await self._starten("frei", titel, sorted(schritte, key=lambda s: s[0]), frisch=frisch, gruppe="")
+
+    async def _starten(self, name: str, titel: str, schritte, frisch: bool, gruppe: str) -> None:
         await self.stoppen()
         self.drehbuch = name
-        self.task = asyncio.create_task(self._lauf(name), name="simulation")
+        self.titel = titel
+        self.task = asyncio.create_task(self._lauf(titel, schritte, frisch, gruppe), name="simulation")
 
     async def stoppen(self) -> None:
         if self.task and not self.task.done():
@@ -113,13 +129,12 @@ class Simulation:
                 pass
         self.task = None
 
-    async def _lauf(self, name: str) -> None:
-        titel, schritte = DREHBUECHER[name]
-        g, g2 = random.sample(GRUPPEN, 2)
-        self.z.besuch.zuruecksetzen()
+    async def _lauf(self, titel: str, schritte, frisch: bool, gruppe: str) -> None:
+        if frisch:
+            self.z.besuch.zuruecksetzen()
         self.start = time.monotonic()
-        self.dauer = max(t for t, *_ in schritte)
-        self.z.protokollieren(f"PC-Test: Simulation „{titel}“ – {g}", "info")
+        self.dauer = max((t for t, *_ in schritte), default=0)
+        self.z.protokollieren(f"PC-Test: Simulation „{titel}“" + (f" – {gruppe}" if gruppe else ""), "info")
         self._melden()
         try:
             for t, aktion, wert in schritte:
@@ -127,8 +142,8 @@ class Simulation:
                 if warten > 0:
                     await asyncio.sleep(warten)
                 if aktion == "szene":
-                    self.z.ki.testszene = str(wert).format(g=g, g2=g2)
-                    self.schritt = self.z.ki.testszene
+                    self.z.ki.testszene = str(wert or "") or None
+                    self.schritt = self.z.ki.testszene or "(Kamera leer)"
                 else:
                     self.schritt = f"{ {'fern': 'Weg-Sensor', 'nah': 'Tür-Sensor', 'klingel': 'Klingel'}[aktion]} " \
                                    f"{'an' if wert else 'aus'}"

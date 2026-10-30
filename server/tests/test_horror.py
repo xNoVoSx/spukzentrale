@@ -166,3 +166,36 @@ def test_ki_liest_testszene_statt_bild():
             return await z.ki._standbild(None, "camera.egal")
         assert asyncio.run(bild()) == b""
         z.ki.testszene = None
+
+
+def test_freies_drehbuch_und_live_szene(monkeypatch):
+    gesagt = []
+
+    async def ansprechen(self, kamera, vol=100, quelle="", lage="", reaktion=True, still_bei=()):
+        gesagt.append(self.testszene)
+        return "gesagt"
+
+    monkeypatch.setattr(KiStimme, "ansprechen", ansprechen)
+    monkeypatch.setattr(simulation.asyncio, "sleep", _schnell(asyncio.sleep))
+    with TestClient(app) as c:
+        z = app.state.zentrale
+        c.put("/api/ausloeser", json=[
+            {"name": "Weg", "aktiv": True, "entity_id": "binary_sensor.a", "typ": "ki", "ziel": "camera.weg", "rolle": "fern"}])
+        z.zustand.licht.an = True
+        r = c.post("/api/test/simulation", json={"titel": "Chaos 1", "schritte": [
+            {"t": 0.1, "aktion": "fern", "wert": True}, {"t": 0, "aktion": "szene", "wert": "Ein Clown mit Ballon kommt."},
+            {"t": 0.2, "aktion": "fern", "wert": False}]}).json()
+        assert r["drehbuch"] == "frei" and r["titel"] == "Chaos 1"
+
+        async def warten():
+            while z.simulation.laeuft:
+                await asyncio.sleep(0.05)
+            await asyncio.gather(*z._ki_tasks)
+        asyncio.run(warten())
+        assert gesagt == ["Ein Clown mit Ballon kommt."] and z.ki.testszene is None
+        assert c.post("/api/test/simulation", json={"schritte": [{"t": 0, "aktion": "tanzen", "wert": True}]}).status_code == 422
+        assert c.post("/api/test/szene", json={"text": "  Zwei Hexen  "}).json()["szene"] == "Zwei Hexen"
+        assert z.ki.testszene == "Zwei Hexen"
+        c.post("/api/test/szene", json={"text": ""})
+        assert z.ki.testszene is None
+        c.put("/api/ausloeser", json=[])
