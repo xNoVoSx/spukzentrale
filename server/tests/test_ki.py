@@ -24,6 +24,7 @@ def test_satz_bereinigen():
     assert satz_bereinigen('"Hey du, kleines Skelett!" *flüstert*\nNoch was') == "Hey du, kleines Skelett!"
     assert satz_bereinigen("„Komm näher…“ (leise)") == "Komm näher…"
     assert satz_bereinigen("") == ""
+    assert satz_bereinigen("...Komm näher… ich warte.") == "Komm näher… ich warte."
 
 
 def test_wav_dauer():
