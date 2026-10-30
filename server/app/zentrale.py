@@ -553,6 +553,24 @@ class Zentrale:
             self.medien.speichern()
             self.daten_geaendert()
 
+    async def fx_ersetzen(self, alt_id: str, neu: Effekt) -> None:
+        """Effekt durch eine neue Datei ersetzen (neue ID): Eintrag an derselben Stelle, alte Dateien weg,
+        Szenen-Verweise angepasst, neu analysiert. fx_sync macht der Aufrufer."""
+        liste = self.medien.daten.fx
+        liste[:] = [neu if x.id == alt_id else x for x in liste if x.id != neu.id or x.id == alt_id]
+        if neu.id != alt_id:
+            self.medien.fx_pfad(alt_id).unlink(missing_ok=True)
+            self.medien.fx_vorhoer_pfad(alt_id).unlink(missing_ok=True)
+            geaendert = False
+            for s in self.szenen.liste:
+                for sch in s.schritte:
+                    if sch.fx_id == alt_id:
+                        sch.fx_id, geaendert = neu.id, True
+            if geaendert:
+                self.speichern("szenen")
+        self.medien.speichern()
+        await self.fx_analysieren(neu.id)
+
     async def fx_nachbearbeiten(self) -> dict:
         """Vorhandene Effekte mit langer Stille am Ende neu umwandeln (gekürzt). Neue Datei = neue ID: Verweise in
         Szenen werden angepasst, der Pi gleicht danach ab."""
@@ -569,19 +587,8 @@ class Zentrale:
                 continue
             gespart += alt.dauer_ms - dauer_ms
             gekuerzt += 1
-            neu = alt.model_copy(update={"id": fid, "dauer_ms": dauer_ms, "groesse": groesse})
-            liste = self.medien.daten.fx
-            liste[:] = [neu if x.id == alt.id else x for x in liste if x.id != fid or x.id == alt.id]
-            self.medien.fx_pfad(alt.id).unlink(missing_ok=True)
-            self.medien.fx_vorhoer_pfad(alt.id).unlink(missing_ok=True)
-            for s in self.szenen.liste:
-                for sch in s.schritte:
-                    if sch.fx_id == alt.id:
-                        sch.fx_id = fid
-            self.medien.speichern()
-            await self.fx_analysieren(fid)
+            await self.fx_ersetzen(alt.id, alt.model_copy(update={"id": fid, "dauer_ms": dauer_ms, "groesse": groesse}))
         if gekuerzt:
-            self.speichern("szenen")
             await self.fx_sync()
             self.daten_geaendert()
             self.protokollieren(f"Effekte nachbearbeitet: {gekuerzt} gekürzt, {gespart / 1000:.1f} s Stille weg", "info")

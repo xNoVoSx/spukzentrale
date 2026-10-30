@@ -641,7 +641,7 @@ bereich("sounds-fx", "sounds", ["medien", "daten"], () => {
       ${gruppen}
       <h3>Hochladen</h3>
       <div class="feldreihe">
-        <label class="feld"><span>Kategorie</span><select id="fx-kategorie">${optionen(kategorien(), "donner")}</select></label>
+        <label class="feld"><span>Kategorie</span><select id="fx-kategorie">${optionen([["auto", "🤖 automatisch (mit Prüfliste)"], ...kategorien()], "auto")}</select></label>
         <label class="feld"><span>Name (optional)</span><input type="text" id="fx-name" maxlength="60" placeholder="aus dem Dateinamen"></label>
       </div>
       <input type="file" id="fx-datei" accept="audio/*,.mp3,.ogg,.wav,.flac,.m4a" multiple>
@@ -1349,7 +1349,9 @@ const AKTIONEN = {
   "musik-loeschen": async (el) => {
     if (confirm("Stück löschen?")) await api("DELETE", `/api/musik/${el.dataset.id}`);
   },
-  "fx-hochladen": () => hochladen("#fx-datei", "/api/fx", () => ({ kategorie: $("#fx-kategorie").value, name: $("#fx-name").value })),
+  "fx-hochladen": () => $("#fx-kategorie").value === "auto"
+    ? fxAutoHochladen()
+    : hochladen("#fx-datei", "/api/fx", () => ({ kategorie: $("#fx-kategorie").value, name: $("#fx-name").value })),
   "fx-bearbeiten": (el) => fxBearbeiten(el.dataset.id),
   "fx-nachbearbeiten": async () => {
     toast("Sounds werden gekürzt …");
@@ -1444,6 +1446,83 @@ const AKTIONEN = {
     if (confirm("Gerät neu starten?")) await api("POST", `/api/geraete/${el.dataset.rolle}/neustart`);
   },
 };
+
+// Hochladen mit automatischer Kategorie: erst alles prüfen (nichts wird abgelegt), dann eine Prüfliste –
+// nachfragen nur, wo es nötig ist (Kategorie unsicher, gleichnamiger Sound mit anderer Länge)
+async function fxAutoHochladen() {
+  const dateien = [...($("#fx-datei")?.files || [])];
+  if (!dateien.length) return toast("Erst eine Datei auswählen", true);
+  const name1 = dateien.length === 1 ? $("#fx-name").value.trim() : "";
+  const liste = [];
+  for (const [n, datei] of dateien.entries()) {
+    toast(`${datei.name}: wird geprüft (${n + 1}/${dateien.length}) …`);
+    const fd = new FormData();
+    fd.append("datei", datei);
+    if (name1) fd.append("name", name1);
+    try {
+      liste.push({ datei, url: URL.createObjectURL(datei), ...(await api("POST", "/api/fx/pruefen", fd, true)) });
+    } catch (e) {
+      liste.push({ datei, fehler: e.message || "Fehler" });
+    }
+  }
+  const zeile = (p, i) => {
+    if (p.fehler) return `<li><div class="name">${esc(p.datei.name)}<small class="warnung">❌ ${esc(p.fehler)}</small></div></li>`;
+    const v = p.vorhanden;
+    const hoeren = `<button type="button" class="klein symbol" data-aktion="vorhoeren" data-url="${p.url}" title="Neue Datei anhören">🎧</button>`;
+    if (v && v.gleich) {
+      return `<li><div class="name">${esc(p.name)}<small>⏭️ schon da (${dauer(v.dauer_ms)}) – wird ignoriert</small></div></li>`;
+    }
+    const kat = `<label class="feld"><span>${p.sicher ? "Kategorie ✅" : "Kategorie ❓ bitte prüfen"}</span>
+      <select name="kat${i}">${optionen(kategorien(), v ? v.kategorie : p.kategorie)}</select></label>`;
+    const info = `${dauer(p.dauer_ms)}${p.verlauf ? " · " + esc(p.verlauf) : ""}${p.klassen?.length ? " · 🔎 " + esc(p.klassen.slice(0, 3).join(", ")) : ""}`;
+    if (v) {
+      return `<li style="flex-wrap:wrap"><div class="name">${esc(p.name)}<small class="warnung" style="white-space:normal">⚠️ gibt es schon,
+          aber anders lang: Server ${dauer(v.dauer_ms)} · neu ${dauer(p.dauer_ms)}</small><small>${info}</small></div>
+        <button type="button" class="klein symbol" data-aktion="vorhoeren" data-url="/api/fx/${v.id}/vorhoeren" title="Server-Version anhören">🎧S</button>
+        ${hoeren.replace("🎧<", "🎧N<")}
+        <div class="feldreihe" style="width:100%">
+          <label class="feld"><span>Was tun?</span><select name="was${i}">${optionen([["behalten", "Server-Version behalten"], ["ersetzen", "durch die neue ersetzen"], ["beide", "beide behalten"]], "behalten")}</select></label>
+          ${kat}
+        </div></li>`;
+    }
+    return `<li style="flex-wrap:wrap"><div class="name">${esc(p.name)}<small>${info}</small></div>${hoeren}
+      <div class="feldreihe" style="width:100%">${kat}</div></li>`;
+  };
+  const offen = liste.filter((p) => !p.fehler && !(p.vorhanden && p.vorhanden.gleich));
+  const ergebnis = await dialog(`
+    <h2>Prüfliste</h2>
+    <p class="hinweis">${offen.length} von ${liste.length} Dateien werden hochgeladen. ❓ = Kategorie unsicher, ⚠️ = gleichnamiger
+      Sound mit anderer Länge (🎧S Server-Version, 🎧N neue Datei).</p>
+    <ul class="liste">${liste.map(zeile).join("")}</ul>`,
+  (f) => liste.map((p, i) => ({ p, kat: f.elements[`kat${i}`]?.value, was: f.elements[`was${i}`]?.value })));
+  if (!ergebnis) {
+    liste.forEach((p) => p.url && URL.revokeObjectURL(p.url));
+    return;
+  }
+  const z = { neu: 0, ersetzt: 0, ignoriert: 0, fehler: [] };
+  for (const { p, kat, was } of ergebnis) {
+    if (p.fehler) { z.fehler.push(`${p.datei.name}: ${p.fehler}`); continue; }
+    if ((p.vorhanden && p.vorhanden.gleich) || was === "behalten") { z.ignoriert++; continue; }
+    toast(`${p.name}: wird hochgeladen …`);
+    const fd = new FormData();
+    fd.append("datei", p.datei);
+    fd.append("kategorie", kat);
+    if (was === "ersetzen") fd.append("ersetzen", p.vorhanden.id);
+    if (was === "beide") fd.append("name", `${p.name} (2)`.slice(0, 60));
+    else if (name1) fd.append("name", name1);
+    try {
+      await api("POST", "/api/fx", fd, true);
+      was === "ersetzen" ? z.ersetzt++ : z.neu++;
+    } catch (e) {
+      z.fehler.push(`${p.name}: ${e.message || "Fehler"}`);
+    }
+  }
+  liste.forEach((p) => p.url && URL.revokeObjectURL(p.url));
+  $("#fx-datei").value = "";
+  const text = `${z.neu} neu, ${z.ersetzt} ersetzt, ${z.ignoriert} ignoriert${z.fehler.length ? `, ${z.fehler.length} fehlgeschlagen` : ""}`;
+  toast(text, z.fehler.length > 0);
+  if (z.fehler.length) alert(`${text}\n\nNicht hochgeladen:\n${z.fehler.join("\n")}`);
+}
 
 async function hochladen(feldSel, pfad, zusatz) {
   const dateien = [...($(feldSel)?.files || [])];

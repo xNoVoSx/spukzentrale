@@ -41,11 +41,11 @@ MERKMALE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "schritte": (("footstep", "steps", "schritt", "walking"), ("Walk, footsteps", "Run")),
     "kraehe": (("crow", "raven", "krähe", "kraehe", "rabe"), ("Crow", "Caw")),
     "glocke": (("bell", "glocke", "toll", "chime", "gong"), ("Bell", "Church bell", "Gong", "Chime")),
-    "spieluhr": (("music-box", "musicbox", "music box", "spieluhr", "lullaby"), ("Music box", "Glockenspiel")),
+    "spieluhr": (("musicbox", "music box", "spieluhr", "lullaby"), ("Music box", "Glockenspiel")),
     "zombie": (("zombie", "undead", "groan", "moan"), ("Groan", "Grunt")),
     "fluestern": (("whisper", "flüster", "fluester"), ("Whispering",)),
     "klopfen": (("knock", "bang", "klopf", "pound", "slam"), ("Knock", "Bang", "Thump, thud", "Slam")),
-    "tiere": (("owl", "eule", "bat-", "bats", "fledermaus", "hoot"), ("Owl", "Hoot")),
+    "tiere": (("owl", "owls", "eule", "bat", "bats", "fledermaus", "hoot"), ("Owl", "Hoot")),
 }
 
 
@@ -110,13 +110,33 @@ def _klassen(x: np.ndarray) -> list[str]:
     return aus
 
 
+def nach_dateiname(name: str) -> list[str]:
+    """Kategorien, die der Dateiname nennt – Wort für Wort, das längste passende Stichwort gewinnt („chainsaw“ ->
+    Kettensäge statt Kette, „howling“ -> Werwolf statt „owl“). Kurze Stichwörter (≤ 3 Buchstaben) nur als ganzes Wort."""
+    woerter = re.findall(r"[a-zäöüß]+", name.lower())
+    text = " " + " ".join(woerter) + " "
+    treffer: list[str] = []
+    for wort in woerter:
+        beste = (0, "")
+        for kat, (stich, _) in MERKMALE.items():
+            for s in stich:
+                if " " not in s and (wort == s or (len(s) >= 4 and wort.startswith(s))) and len(s) > beste[0]:
+                    beste = (len(s), kat)
+        if beste[1] and beste[1] not in treffer:
+            treffer.append(beste[1])
+    for kat, (stich, _) in MERKMALE.items():
+        if any(" " in s and f" {s} " in text for s in stich) and kat not in treffer:
+            treffer.append(kat)
+    return treffer
+
+
 def kategorie_vorschlag(name: str, kategorie: str, klassen: list[str]) -> str | None:
     """Andere Kategorie, wenn Dateiname oder Klang klar dorthin zeigen und nichts für die eigene spricht."""
-    datei = name.lower()
+    namentlich = nach_dateiname(name)
 
     def passt(kat: str) -> tuple[bool, bool]:
-        woerter, yam = MERKMALE.get(kat, ((), ()))
-        return any(w in datei for w in woerter), any(k in yam for k in klassen)
+        _, yam = MERKMALE.get(kat, ((), ()))
+        return kat in namentlich, any(k in yam for k in klassen)
 
     eigen_datei, eigen_klang = passt(kategorie)
     if eigen_datei or kategorie in ("stimme", "reaktion", "sonstiges", "system"):
@@ -125,6 +145,23 @@ def kategorie_vorschlag(name: str, kategorie: str, klassen: list[str]) -> str | 
     # der Dateiname ist der stärkste Hinweis, dann der Klang (nur wenn für die eigene Kategorie nichts spricht)
     treffer = [k for k in andere if passt(k)[0]] or ([] if eigen_klang else [k for k in andere if passt(k)[1]])
     return treffer[0] if treffer else None
+
+
+def kategorie_auto(name: str, klassen: list[str]) -> tuple[str, bool, list[str]]:
+    """Kategorie für einen neuen Sound: (Vorschlag, sicher?, alle Kandidaten). Sicher nur, wenn der Dateiname genau
+    eine Kategorie nennt; sonst (mehrere, nur der Klang oder gar nichts) soll der Mensch entscheiden."""
+    nach_name = nach_dateiname(name)
+    nach_klang = [k for k, (_, yam) in MERKMALE.items() if any(c in yam for c in klassen)]
+    if not nach_name and any(w in name.lower() for w in ("voice", "stimme", "speech", "sprich")):
+        nach_name = ["stimme"]
+    if len(nach_name) == 1:
+        return nach_name[0], True, nach_name
+    if nach_name:
+        beide = [k for k in nach_name if k in nach_klang]
+        return (beide or nach_name)[0], False, nach_name
+    if nach_klang:
+        return nach_klang[0], False, nach_klang
+    return "sonstiges", False, []
 
 
 def beschreibung(name: str, a: FxAnalyse) -> str:

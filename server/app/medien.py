@@ -86,8 +86,9 @@ async def musik_umwandeln(quelle: Path) -> tuple[str, float, int]:
         tmp.unlink(missing_ok=True)
 
 
-async def fx_umwandeln(quelle: Path) -> tuple[str, int, int]:
-    """Gibt (id, dauer_ms, groesse) zurück. Ergebnis: pfade.FX/<id>.wav (+ <id>.mp3 zum Vorhören)."""
+async def fx_umwandeln(quelle: Path, ordner: Path | None = None) -> tuple[str, int, int]:
+    """Gibt (id, dauer_ms, groesse) zurück. Ergebnis: <ordner>/<id>.wav (+ <id>.mp3 zum Vorhören), Standard pfade.FX."""
+    ordner = ordner or pfade.FX
     basis = pfade.TMP / uuid.uuid4().hex
     pcm, wav, mp3 = basis.with_suffix(".pcm.wav"), basis.with_suffix(".wav"), basis.with_suffix(".mp3")
     try:
@@ -110,9 +111,9 @@ async def fx_umwandeln(quelle: Path) -> tuple[str, int, int]:
         if d < 0.05:
             raise KonvertierFehler("Sound ist zu kurz")
         fid = _hash(wav)
-        shutil.move(wav, pfade.FX / f"{fid}.wav")
-        shutil.move(mp3, pfade.FX / f"{fid}.mp3")
-        return fid, int(d * 1000), (pfade.FX / f"{fid}.wav").stat().st_size
+        shutil.move(wav, ordner / f"{fid}.wav")
+        shutil.move(mp3, ordner / f"{fid}.mp3")
+        return fid, int(d * 1000), (ordner / f"{fid}.wav").stat().st_size
     finally:
         for p in (pcm, wav, mp3):
             p.unlink(missing_ok=True)

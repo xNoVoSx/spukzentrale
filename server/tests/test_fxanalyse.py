@@ -84,3 +84,40 @@ def test_gleicher_name_wird_nicht_doppelt_hochgeladen(tmp_path):
         b = c.post("/api/fx", files={"datei": ("eule-ruft.wav", q.read_bytes(), "audio/wav")}, data={"kategorie": "tiere"}).json()
         assert a["id"] == b["id"] and sum(f.name == a["name"] for f in z.medien.daten.fx) == 1
         z.medien.fx_loeschen(a["id"])
+
+
+def test_kategorie_automatisch():
+    k = fxanalyse.kategorie_auto
+    assert k("lazychillzone-wolves-howling-1-225304", ["Howl"]) == ("werwolf", True, ["werwolf"])
+    assert k("universfield-creaking-door-03", ["Tools"])[:2] == ("tuer", True)
+    kat, sicher, kand = k("chrysalyn-footsteps-and-knocking-with-mysterious", ["Thunk"])
+    assert not sicher and set(kand) == {"schritte", "klopfen"}                 # zwei Kandidaten: nachfragen
+    assert k("aufnahme-17", ["Crow"])[:2] == ("kraehe", False)                 # nur der Klang: nachfragen
+    assert k("aufnahme-18", ["Silence"])[:2] == ("sonstiges", False)
+    assert k("creepy-voice-line", ["Speech"])[0] == "stimme"
+
+
+def test_pruefen_und_ersetzen(tmp_path):
+    q = tmp_path / "wolf.wav"
+    _ton(q, "sine=f=300:d=2")
+    with TestClient(app) as c:
+        z = app.state.zentrale
+        vorher = sorted(p.name for p in pfade.FX.iterdir())
+        p = c.post("/api/fx/pruefen", files={"datei": ("wolves-howling.wav", q.read_bytes(), "audio/wav")}).json()
+        assert p["kategorie"] == "werwolf" and p["sicher"] and p["vorhanden"] is None and 1900 < p["dauer_ms"] < 2400
+        assert sorted(x.name for x in pfade.FX.iterdir()) == vorher                       # nichts abgelegt
+        alt = c.post("/api/fx", files={"datei": ("wolves-howling.wav", q.read_bytes(), "audio/wav")},
+                     data={"kategorie": "werwolf"}).json()
+        z.szenen.liste.append(Szene(id="w", name="W", schritte=[Schritt(typ="fx", fx_id=alt["id"])]))
+        p = c.post("/api/fx/pruefen", files={"datei": ("wolves-howling.wav", q.read_bytes(), "audio/wav")}).json()
+        assert p["vorhanden"]["id"] == alt["id"] and p["vorhanden"]["gleich"]
+        _ton(q, "sine=f=300:d=5")                                                         # neue, längere Fassung
+        p = c.post("/api/fx/pruefen", files={"datei": ("wolves-howling.wav", q.read_bytes(), "audio/wav")}).json()
+        assert not p["vorhanden"]["gleich"]
+        neu = c.post("/api/fx", files={"datei": ("wolves-howling.wav", q.read_bytes(), "audio/wav")},
+                     data={"kategorie": "werwolf", "ersetzen": alt["id"]}).json()
+        assert neu["id"] != alt["id"] and neu["dauer_ms"] > 4500 and neu["name"] == alt["name"]
+        assert z.medien.fx(alt["id"]) is None and z.szenen.liste[-1].schritte[0].fx_id == neu["id"]
+        assert sum(f.name == alt["name"] for f in z.medien.daten.fx) == 1
+        z.medien.fx_loeschen(neu["id"])
+        z.szenen.liste.pop()

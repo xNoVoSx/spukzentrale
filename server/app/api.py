@@ -477,13 +477,17 @@ async def fx_hochladen(
     datei: Annotated[UploadFile, File()],
     kategorie: Annotated[Kategorie, Form()] = "sonstiges",
     name: Annotated[str, Form()] = "",
+    ersetzen: Annotated[str, Form()] = "",
 ):
     z = zentrale(request)
+    alt = z.medien.fx(ersetzen) if ersetzen else None
+    if ersetzen and not alt:
+        raise _nicht_gefunden("Den zu ersetzenden Effekt")
     # schon da (gleicher Name)? Dann nicht doppelt anlegen – der Inhalt allein erkennt das nicht mehr sicher,
     # seit Stille am Ende abgeschnitten wird (alter, ungekürzter Sound ≠ neu hochgeladener)
     anzeige = (name.strip() or _anzeigename(datei.filename))[:60]
     vorhanden = next((f for f in z.medien.daten.fx if f.name == anzeige), None)
-    if vorhanden:
+    if vorhanden and not alt:
         return vorhanden
     roh = await _hochladen(datei, FX_MAX_MB)
     try:
@@ -498,8 +502,18 @@ async def fx_hochladen(
         z.medien.fx_vorhoer_pfad(fid).unlink(missing_ok=True)
         raise HTTPException(507, "Der Effekt-Speicher des Sound-Geräts ist voll – lösche erst andere Effekte")
     licht = LICHT_JE_KATEGORIE.get(kategorie)
+    if alt:
+        # neue Fassung eines vorhandenen Effekts: Name, Lautstärke, Beschreibung bleiben; Licht nur bei gleicher Kategorie
+        neu = alt.model_copy(update={"id": fid, "kategorie": kategorie, "dauer_ms": dauer_ms, "groesse": groesse,
+                                     "analyse": None, "licht": alt.licht if alt.kategorie == kategorie else
+                                     (licht.model_copy() if licht else None)})
+        await z.fx_ersetzen(alt.id, neu)
+        z.protokollieren(f"Effekt ersetzt: {neu.name} ({alt.dauer_ms / 1000:.1f} s -> {dauer_ms / 1000:.1f} s)", "info")
+        await z.fx_sync()
+        z.daten_geaendert()
+        return z.medien.fx(fid) or neu
     f = z.medien.fx_hinzu(Effekt(
-        id=fid, name=(name.strip() or _anzeigename(datei.filename))[:60], kategorie=kategorie,
+        id=fid, name=anzeige, kategorie=kategorie,
         licht=licht.model_copy() if licht else None, dauer_ms=dauer_ms, groesse=groesse,
     ))
     z.protokollieren(f"Effekt hochgeladen: {f.name} ({dauer_ms / 1000:.1f} s)", "info")
@@ -519,6 +533,34 @@ async def fx_aendern(request: Request, fid: str, d: EffektAenderung):
     z.medien.speichern()
     z.daten_geaendert()
     return f
+
+
+@router.post("/api/fx/pruefen")
+async def fx_pruefen(request: Request, datei: Annotated[UploadFile, File()], name: Annotated[str, Form()] = ""):
+    """Vor dem Hochladen: Kategorie aus Dateiname/Klang, schon vorhanden (gleicher Name) und gleich lang?
+    Legt nichts ab."""
+    z = zentrale(request)
+    anzeige = (name.strip() or _anzeigename(datei.filename))[:60]
+    roh = await _hochladen(datei, FX_MAX_MB)
+    ordner = pfade.TMP / f"pruefen-{uuid.uuid4().hex}"
+    ordner.mkdir(parents=True)
+    try:
+        fid, dauer_ms, _ = await fx_umwandeln(roh, ordner)
+        a = await asyncio.get_running_loop().run_in_executor(
+            None, fxanalyse.analysieren, ordner / f"{fid}.wav", anzeige, "sonstiges")
+    except KonvertierFehler as e:
+        raise HTTPException(400, f"Umwandlung fehlgeschlagen: {e}") from e
+    finally:
+        roh.unlink(missing_ok=True)
+        shutil.rmtree(ordner, ignore_errors=True)
+    kategorie, sicher, kandidaten = fxanalyse.kategorie_auto(anzeige, a.klassen)
+    f = next((x for x in z.medien.daten.fx if x.name == anzeige), None)
+    vorhanden = None
+    if f:
+        vorhanden = {"id": f.id, "name": f.name, "kategorie": f.kategorie, "dauer_ms": f.dauer_ms,
+                     "gleich": min(abs(dauer_ms - f.dauer_ms), abs(dauer_ms - f.hoerbar_ms)) <= 400}
+    return {"name": anzeige, "dauer_ms": dauer_ms, "klassen": a.klassen, "verlauf": a.verlauf,
+            "kategorie": kategorie, "sicher": sicher, "kandidaten": kandidaten, "vorhanden": vorhanden}
 
 
 @router.post("/api/fx/nachbearbeiten")
