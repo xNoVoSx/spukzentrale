@@ -24,7 +24,9 @@ einen Sound aus der Ersatz-Kategorie – die Show läuft ohne KI weiter wie vorh
    ```
    (`setuptools<81`: das Wasserzeichen-Paket von Chatterbox braucht noch `pkg_resources`.)
 3. Stimmvorlagen: `<name>.wav`, 10–15 s saubere Sprache, in den Ordner `SPUK_VORLAGEN`. Welche Vorlage zu welcher
-   Stimme gehört, steht in `STIMMEN` in `stimme.py` (`daemon` braucht keine Vorlage).
+   Stimme gehört, steht in `STIMMEN` in `stimme.py` (`daemon` braucht keine Vorlage). Standard ist `alter_mann`
+   (Vorlage: freesound.org, sabotovat, Sound 414496, CC BY 3.0); fehlt eine Stimme oder scheitert sie, spricht
+   `maedchen` als Ersatz. Englische Vorlagen färben das Deutsch ein – dagegen hilft `cfg_weight` 0.
 4. Dienste: `systemd/*.service` nach `~/.config/systemd/user/` kopieren, Pfade prüfen, dann
    `systemctl --user daemon-reload && systemctl --user enable --now spuk-llm spuk-stimme`.
 5. Firewall: Ports 8091–8092 für das LAN öffnen (z. B. `sudo ufw allow from 192.168.1.0/24 to any port 8091:8092 proto tcp`).

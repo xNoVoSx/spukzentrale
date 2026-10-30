@@ -1,14 +1,15 @@
 """Sprach-Dienst für die KI-Stimme: Text -> Gruselstimme (WAV), läuft auf einem PC mit NVIDIA-GPU.
 
-Chatterbox (mehrsprachig, Resemble AI) spricht den Text, ffmpeg legt die Effekte drüber (Tonhöhe, Hall).
+Chatterbox (mehrsprachig, Resemble AI) spricht den Text, ffmpeg legt ggf. Effekte drüber (Tonhöhe, Hall).
 Das Modell bleibt geladen, eine Anfrage dauert je nach Satzlänge 1–4 s.
 
-  POST /sprechen  {"text": "...", "stimme": "maedchen"}  ->  audio/wav (44,1 kHz mono)
+  POST /sprechen  {"text": "...", "stimme": "alter_mann"} ->  audio/wav (44,1 kHz mono), Kopf X-Stimme
   GET  /stimmen                                          ->  {"stimmen": [...]}
   GET  /gesund                                           ->  {"ok": true}
 
 Stimmen: STIMMEN unten. Eine Stimme mit Vorlage klont die WAV-Datei <vorlagen>/<name>.wav (10–15 s Sprache,
 ohne Musik). Ordner per Umgebungsvariable SPUK_VORLAGEN (Standard: ./vorlagen).
+Fehlt eine Stimme oder scheitert sie, spricht die ERSATZ-Stimme (die Show soll nie stumm bleiben).
 """
 
 import logging
@@ -31,11 +32,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 VORLAGEN = Path(os.environ.get("SPUK_VORLAGEN", Path(__file__).parent / "vorlagen"))
 
 # name: (Vorlage oder None = Standardstimme, exaggeration, cfg_weight, ffmpeg-Effekte)
+# cfg_weight 0: laut Chatterbox-Doku gegen den Akzent einer fremdsprachigen (hier englischen) Vorlage
 STIMMEN: dict[str, tuple[str | None, float, float, str]] = {
+    "alter_mann": ("alter_mann", 0.8, 0.0, ""),       # Vorlage: freesound sabotovat/414496 (CC BY 3.0)
     "maedchen": ("maedchen", 0.6, 0.4, "aecho=0.8:0.6:50|110:0.25|0.15"),
     "daemon": (None, 0.7, 0.3,
                "rubberband=pitch=0.7:formant=shifted,aecho=0.8:0.7:70|150|240:0.3|0.2|0.12,bass=g=4"),
 }
+ERSATZ = "maedchen"
 ENDE = "highpass=f=70,loudnorm=I=-16:TP=-1.5,apad=pad_dur=0.3"
 
 app = FastAPI(title="Spukzentrale – Stimme")
@@ -46,7 +50,7 @@ _sperre = threading.Lock()  # die GPU spricht immer nur einen Satz
 
 class Anfrage(BaseModel):
     text: str = Field(min_length=1, max_length=300)
-    stimme: str = "maedchen"
+    stimme: str = "alter_mann"
 
 
 def _laden() -> None:
@@ -87,7 +91,7 @@ def _sprechen(text: str, stimme: str) -> bytes:
         f.flush()
         return subprocess.run(
             ["ffmpeg", "-v", "error", "-nostdin", "-f", "f32le", "-ar", str(_modell.sr), "-ac", "1", "-i", f.name,
-             "-af", f"{fx},{ENDE}", "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1"],
+             "-af", f"{fx},{ENDE}" if fx else ENDE, "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1"],
             capture_output=True, check=True, timeout=30,
         ).stdout
 
@@ -104,13 +108,25 @@ def stimmen() -> dict:
 
 @app.post("/sprechen")
 def sprechen(a: Anfrage) -> Response:
-    if a.stimme not in verfuegbar():
-        raise HTTPException(404, f"Stimme {a.stimme!r} gibt es nicht (da: {', '.join(verfuegbar())})")
+    da = verfuegbar()
+    stimme = a.stimme
+    if stimme not in da:
+        if ERSATZ not in da:
+            raise HTTPException(404, f"Stimme {a.stimme!r} gibt es nicht (da: {', '.join(da)})")
+        log.warning("Stimme %s fehlt – spreche mit %s", a.stimme, ERSATZ)
+        stimme = ERSATZ
     t0 = time.monotonic()
     with _sperre:
-        daten = _sprechen(a.text.strip(), a.stimme)
-    log.info("%s (%.1f s): %s", a.stimme, time.monotonic() - t0, a.text)
-    return Response(daten, media_type="audio/wav")
+        try:
+            daten = _sprechen(a.text.strip(), stimme)
+        except Exception:
+            if stimme == ERSATZ or ERSATZ not in da:
+                raise
+            log.exception("Stimme %s gescheitert – spreche mit %s", stimme, ERSATZ)
+            stimme = ERSATZ
+            daten = _sprechen(a.text.strip(), stimme)
+    log.info("%s (%.1f s): %s", stimme, time.monotonic() - t0, a.text)
+    return Response(daten, media_type="audio/wav", headers={"X-Stimme": stimme})
 
 
 if __name__ == "__main__":
