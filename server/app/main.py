@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI):
     finally:
         for t in tasks:
             t.cancel()
+        await z.simulation.stoppen()
         await z.spieler.stoppen()
         await ha.stoppen()
         await mqtt.stoppen()

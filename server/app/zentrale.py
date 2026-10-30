@@ -23,6 +23,7 @@ from .geraete import Geraet, Geraete
 from .besuch import LOCKEN, TUER, Besuch
 from .ki import KiStimme
 from .regie import Regie
+from .simulation import Simulation
 from .licht import EspLicht, LichtAusgang
 from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
 from . import musikanalyse
@@ -72,7 +73,11 @@ class Zentrale:
         self.ki = KiStimme(self)
         self.besuch = Besuch(self)
         self.regie = Regie(self)
+        self.simulation = Simulation(self)
         self._ki_tasks: set[asyncio.Task] = set()
+        # Hintergrundmusik kurz gedämpft (Szene „Totenstille“, Regisseur): ("stille"|"leise", Ende monotonic)
+        self.musik_daempfung: tuple[str, float] | None = None
+        self._daempfung_task: asyncio.Task | None = None
 
         # werden in main.py gesetzt (brauchen die Zentrale selbst)
         self.spieler = None    # ablauf.SzenenSpieler
@@ -83,8 +88,14 @@ class Zentrale:
     # ------------------------------------------------------------------
     def _vorgaben_ergaenzen(self) -> None:
         """Eingebaute Stimmungen/Szenen/Regeln anlegen, wenn sie (noch) fehlen."""
-        if not self.stimmungen.liste:
-            self.stimmungen.liste = [s.model_copy(deep=True) for s in vorgaben.STIMMUNGEN]
+        if self.stimmungen.liste and self.stimmungen.vorgaben_version == 0:
+            self.stimmungen.vorgaben_version = 1
+        if self.stimmungen.vorgaben_version < vorgaben.STIMMUNGEN_VERSION:
+            vorhanden = {s.id for s in self.stimmungen.liste}
+            for version, st in vorgaben.STIMMUNGEN:
+                if version > self.stimmungen.vorgaben_version and st.id not in vorhanden:
+                    self.stimmungen.liste.append(st.model_copy(deep=True))
+            self.stimmungen.vorgaben_version = vorgaben.STIMMUNGEN_VERSION
             speichere(pfade.CONFIG / "stimmungen.json", self.stimmungen)
         if self.szenen.liste and self.szenen.vorgaben_version == 0:
             self.szenen.vorgaben_version = 1  # Stand von 1.0 (kannte die Versionsnummer noch nicht)
@@ -96,8 +107,14 @@ class Zentrale:
                     self.szenen.liste.append(szene.model_copy(deep=True))
             self.szenen.vorgaben_version = vorgaben.SZENEN_VERSION
             speichere(pfade.CONFIG / "szenen.json", self.szenen)
-        if not self.ereignisse.regeln:
-            self.ereignisse.regeln = [r.model_copy(deep=True) for r in vorgaben.REGELN]
+        if self.ereignisse.regeln and self.ereignisse.vorgaben_version == 0:
+            self.ereignisse.vorgaben_version = 1
+        if self.ereignisse.vorgaben_version < vorgaben.REGELN_VERSION:
+            vorhanden = {r.id for r in self.ereignisse.regeln}
+            for version, r in vorgaben.REGELN:
+                if version > self.ereignisse.vorgaben_version and r.id not in vorhanden:
+                    self.ereignisse.regeln.append(r.model_copy(deep=True))
+            self.ereignisse.vorgaben_version = vorgaben.REGELN_VERSION
             speichere(pfade.CONFIG / "ereignisse.json", self.ereignisse)
 
     def _zonen_anpassen(self) -> None:
@@ -132,6 +149,8 @@ class Zentrale:
 
     def ton_effektiv(self) -> TonEinst:
         t = self.einst.ton.model_copy()
+        if self.musik_daempfung:
+            t.musik_vol = 0 if self.musik_daempfung[0] == "stille" else round(t.musik_vol * 0.3)
         if self.ruhezeit_aktiv:
             if self.einst.ruhezeit.modus == "stumm":
                 t.master = 0
@@ -474,7 +493,7 @@ class Zentrale:
             await self.ambiente_schalten(True)
         else:
             g = self.geraete.get("sound")
-            if g and g.hallo.get("plattform") == "pi":
+            if g and g.hallo.get("plattform") in ("pi", "browser"):
                 await g.senden({"t": "musik", "aktion": "sprung", "pfad": "/stream/ambiente"})
         self._zustand_geaendert()
 
@@ -526,6 +545,39 @@ class Zentrale:
         mid = self.ambiente.naechstes_nach(self.ambiente.jetzt_id)
         if mid and self.zustand.ambiente_an:
             await self.ambiente_spielen(mid)
+
+    async def musik_daempfen(self, art: str, dauer_ms: int) -> None:
+        """Hintergrundmusik für dauer_ms aus („stille“) bzw. leise – danach von selbst wieder normal."""
+        self.musik_daempfung = (art, time.monotonic() + dauer_ms / 1000)
+        if self._daempfung_task:
+            self._daempfung_task.cancel()
+        self._daempfung_task = asyncio.create_task(self._daempfung_ende(dauer_ms / 1000), name="musik-daempfung")
+        await self.sound_konfigurieren()
+
+    async def _daempfung_ende(self, s: float) -> None:
+        await asyncio.sleep(s)
+        await self.musik_normal()
+
+    async def musik_normal(self) -> None:
+        if self.musik_daempfung is None:
+            return
+        self.musik_daempfung = None
+        await self.sound_konfigurieren()
+
+    async def musik_duester(self, quelle: str = "") -> bool:
+        """Zu einem düsteren/dramatischen Stück wechseln (Musikanalyse), sofort zu hören."""
+        if not self.zustand.ambiente_an:
+            return False
+        jetzt = self.ambiente.jetzt_id
+        auswahl = [m for m in self.medien.daten.musik if m.id != jetzt and m.analyse
+                   and m.analyse.stimmung in ("duester", "dramatisch")]
+        if not auswahl:
+            return False
+        m = random.choice(auswahl)
+        await self.ambiente_spielen(m.id)
+        if quelle:
+            self.protokollieren(f"{quelle}: Musik wechselt zu „{m.name}“", "fx")
+        return True
 
     async def ton_geaendert(self) -> None:
         await self.sound_konfigurieren()
@@ -585,6 +637,16 @@ class Zentrale:
         self.speichern("zustand")
         self.protokollieren(f"KI-Stimme {'an' if an else 'aus – KI-Auslöser spielen Ersatz-Sounds'}", "info")
         self._zustand_geaendert()
+
+    async def test_sensor(self, rolle: str, an: bool = True) -> bool:
+        """PC-Test: Weg-/Tür-Sensor bzw. Klingel wie aus Home Assistant (gleiche Sperren). KeyError: kein Auslöser."""
+        a = next((a for a in self.einst.ausloeser if a.aktiv and a.rolle == rolle), None)
+        if a is None:
+            raise KeyError(rolle)
+        if not an:
+            self.ausloeser_aus(a.id)
+            return False
+        return await self.ausloeser(a.id, f"Test: {a.name}")
 
     def regie_schalten(self, an: bool) -> None:
         self.zustand.regie_an = an

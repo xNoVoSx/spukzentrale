@@ -1,7 +1,8 @@
-"""KI-Regisseur: wählt während eines Besuchs die Effekte (Geräusch mit Licht oder nur Licht) passend zur Lage.
+"""KI-Regisseur: steuert während eines Besuchs das Horror-Haus – Geräusche, Licht, Szenen und die Musik.
 
-Standardmäßig aus (Zustand.regie_an). Ohne Besuch läuft alles wie bisher über den Zufalls-Generator, die
-Hintergrundmusik bleibt immer unberührt. Der Regisseur entscheidet zu zwei Anlässen:
+Standardmäßig aus (Zustand.regie_an). Ohne Besuch läuft alles wie bisher über den Zufalls-Generator. Der Regisseur
+darf Sounds (mit Licht), reine Licht-Effekte, kurze Szenen (z. B. Stromausfall, Werwolf) und die Hintergrundmusik
+(Totenstille, leiser, düsteres Stück) einsetzen. Er entscheidet zu zwei Anlässen:
   - direkt nach einem Satz der KI-Stimme (Pointe: Lachen, Blitz … oder nichts), auch nach dem Abschied
   - in Pausen, solange die Leute auf dem Weg/an der Tür sind (frühestens regie_abstand_s nach dem letzten Effekt)
 Die Entscheidung trifft dasselbe Sprachmodell wie die Stimme, nur mit Text (Lage, letzte Beschreibung, letzter
@@ -9,7 +10,8 @@ Satz) – ohne Bild, dauert deshalb nur einen Bruchteil einer Sekunde.
 
 Gegen Durcheinander:
   - nur Kategorien aus aktiven Zufallsregeln, die zur Gruselstufe passen (dieselbe Auswahl wie der Generator),
-    keine Stimmen-Kategorien, keine Sounds länger als regie_max_s
+    keine Stimmen-Kategorien, keine Sounds länger als regie_max_s, Szenen höchstens regie_szene_max_s lang
+    und nur bis zur Gruselstufe der Show
   - nie während die KI spricht, nie während einer Szene, nicht nach dem Klingeln, nicht in einer Besuchs-Pause
   - solange ein Regie-Effekt läuft (belegt_bis), wartet die KI-Stimme mit dem Abspielen bis er vorbei ist
   - Fehler oder Zeitüberschreitung: einfach kein Effekt
@@ -40,13 +42,25 @@ LICHT = {
     "licht_blackout": ("blackout", 2500, "plötzlich ist alles dunkel (2,5 s)"),
     "licht_puls": ("puls", 1500, "das Licht pulsiert einmal auf"),
 }
+MUSIK = {
+    "musik_stille": "Hintergrundmusik verstummt plötzlich für 8 Sekunden (Totenstille – sehr unheimlich)",
+    "musik_leise": "Hintergrundmusik wird für 15 Sekunden ganz leise (man hört jedes Geräusch)",
+    "musik_duester": "zu einem düsteren, bedrohlichen Musikstück wechseln",
+}
 SYSTEM = (
-    "Du bist der Regisseur eines Halloween-Spukhauses. Gerade sind Besucher da (oft Kinder). Eine Geisterstimme "
-    "spricht sie an; du entscheidest, welcher Effekt JETZT passt – oder keiner. Ziel: Spannung aufbauen, gruselig "
-    "aber kinderfreundlich. Kleine Kinder oder ängstlich wirkende Besucher: sanft (Herzschlag, Wind, leises "
-    "Licht). Mutige Jugendliche oder Erwachsene: ruhig heftiger. Abwechslung: nicht dasselbe wie zuletzt. "
-    "Lieber auch mal keiner als Dauerbeschallung. Direkt nach einem Satz passt oft eine kurze Pointe "
-    "(Lachen, Blitz) – zu einem Abschied etwas Leises.\n"
+    "Du bist der unsichtbare Regisseur eines Horror-Hauses an Halloween. Du steuerst Licht, Geräusche, kurze "
+    "Szenen und die Hintergrundmusik. Deine Aufgabe: den Besuchern, die die Kamera gerade sieht, eine echte "
+    "Gänsehaut verpassen – sie sollen sich gruseln, erschrecken und es danach weitererzählen.\n"
+    "So arbeitest du wie ein guter Horrorfilm:\n"
+    "- Spannung aufbauen statt Dauerbeschallung: erst leise, unheimliche Dinge (Musik verstummt, Flüstern, "
+    "Schritte, Herzschlag, flackerndes Licht, ein Geist zieht vorbei), dann ein Schreck (Blackout + Blitz, Schrei, "
+    "Werwolf). Stille und Dunkelheit sind deine stärksten Werkzeuge. Nach einem Schreck kurz Ruhe.\n"
+    "- Auf dem Weg zum Haus: neugierig machen und unheimlich locken, nicht verscheuchen – der große Schreck "
+    "kommt erst, wenn sie an der Tür stehen. Beim Weggehen: ein letzter leiser Gruß (Lachen, Flüstern).\n"
+    "- Dosierung nach dem, was die Kamera sieht: kleine Kinder (an der Hand, Kleinkinder) gruselig, aber nicht "
+    "verstören – keine Schreie, keine Kettensäge, kein Stroboskop. Größere Kinder, Jugendliche und Erwachsene "
+    "darfst du richtig erschrecken. Die Gruselstufe der Show ist die Obergrenze.\n"
+    "- Abwechslung: nicht zweimal dasselbe hintereinander. Die Geisterstimme spricht selbst – du ergänzt sie.\n"
     "Antworte als JSON: {\"effekt\": eine ID aus der Liste, \"grund\": höchstens 12 Wörter}"
 )
 VERLAUF = 15
@@ -78,7 +92,8 @@ class Regie:
                 "optionen": list(self.optionen())}
 
     def optionen(self) -> dict[str, str]:
-        """ID -> Beschreibung fürs Modell: Kategorien aus aktiven Zufallsregeln (Gruselstufe) + reine Licht-Effekte."""
+        """ID -> Beschreibung fürs Modell: Kategorien aus aktiven Zufallsregeln (Gruselstufe), reine Licht-Effekte,
+        kurze Szenen bis zur Gruselstufe, Musik-Steuerung."""
         z = self.z
         stufe = z.zustand.gruselstufe
         max_ms = z.einst.ki.regie_max_s * 1000
@@ -92,7 +107,41 @@ class Regie:
             aus[k] = f"Geräusch „{KATEGORIEN.get(k, k)}“ mit passendem Licht"
         for n, (_, _, text) in LICHT.items():
             aus[n] = f"nur Licht: {text}"
+        if z.spieler:
+            # den Schreck der Klingel nicht vorwegnehmen
+            klingel = {a.ziel for a in z.einst.ausloeser if a.aktiv and a.rolle == "klingel" and a.typ == "szene"}
+            for s in z.szenen.liste:
+                if s.id in klingel:
+                    continue
+                dauer = z.spieler.dauer_ms(s)
+                if s.gruselstufe <= stufe and 0 < dauer <= z.einst.ki.regie_szene_max_s * 1000 and self._szene_geht(s):
+                    aus[f"szene_{s.id}"] = f"Szene „{s.name}“ ({dauer / 1000:.0f} s): {self._szene_text(s)}"
+        if z.zustand.ambiente_an:
+            aus.update(MUSIK)
+            if not any(m.analyse and m.analyse.stimmung in ("duester", "dramatisch") and m.id != z.ambiente.jetzt_id
+                       for m in z.medien.daten.musik):
+                del aus["musik_duester"]
         return aus
+
+    def _szene_geht(self, s) -> bool:
+        """Szenen, deren Sounds alle fehlen, wären nur halbe Szenen – nur nehmen, wenn jeder Sound-Schritt klingt."""
+        m = self.z.medien
+        return all(sch.typ != "fx" or (sch.fx_id and m.fx(sch.fx_id)) or (sch.kategorie and m.fx_der_kategorie(sch.kategorie))
+                   for sch in s.schritte)
+
+    def _szene_text(self, s) -> str:
+        teile = []
+        for sch in s.schritte:
+            if sch.typ == "fx":
+                teile.append(KATEGORIEN.get(sch.kategorie or "", "Sound"))
+            elif sch.typ == "aktion" and sch.aktion:
+                teile.append(f"Licht {sch.aktion.name}")
+            elif sch.typ == "stimmung":
+                st = next((x for x in self.z.stimmungen.liste if x.id == sch.stimmung_id), None)
+                teile.append(f"Licht „{st.name if st else '?'}“")
+            elif sch.typ == "musik":
+                teile.append("Musik verstummt" if sch.musik == "stille" else "Musik leise")
+        return " → ".join(teile)
 
     def _darf(self) -> bool:
         z = self.z
@@ -154,7 +203,8 @@ class Regie:
         if effekt != "keiner":
             await self._spielen(effekt)
             self.letzte.append(effekt)
-            z.protokollieren(f"Regie: {aus.get(effekt, effekt)} – {grund}", "fx")
+            if not effekt.startswith("szene_"):     # Szenen trägt der Szenen-Spieler selbst ein
+                z.protokollieren(f"Regie: {aus.get(effekt, effekt)} – {grund}", "fx")
         self.letzte_aktion = time.monotonic()
         self._merken(eintrag)
         return effekt
@@ -169,8 +219,10 @@ class Regie:
         b = z.besuch
         ki = z.ki.verlauf[0] if z.ki.verlauf else {}
         teile = [
-            f"Lage: {b.info()['text']} (Weg: {'jemand da' if b.an['fern'] else 'leer'}, "
+            f"Lage: {b.info()['text']} (seit {int(time.time() - b.seit)} s; Weg: {'jemand da' if b.an['fern'] else 'leer'}, "
             f"Haustür: {'jemand da' if b.an['nah'] else 'leer'}).",
+            f"Musik: {'gedämpft' if z.musik_daempfung else ('läuft' if z.zustand.ambiente_an else 'aus')}"
+            f"{f' – „{z.ambiente.jetzt}“' if z.zustand.ambiente_an and z.ambiente.jetzt else ''}.",
             f"Was die Kamera zuletzt gesehen hat: {ki.get('beschreibung') or 'unbekannt'}",
             f"Zuletzt gesagt: „{satz or ki.get('satz') or '–'}“",
             f"Anlass: {anlass}.",
@@ -202,6 +254,19 @@ class Regie:
 
     async def _spielen(self, effekt: str) -> None:
         z = self.z
+        if effekt in MUSIK:
+            if effekt == "musik_duester":
+                await z.musik_duester("Regie")
+            else:
+                dauer = 8000 if effekt == "musik_stille" else 15000
+                await z.musik_daempfen("stille" if effekt == "musik_stille" else "leise", dauer)
+            return
+        if effekt.startswith("szene_"):
+            s = next((x for x in z.szenen.liste if x.id == effekt[6:]), None)
+            if s and z.spieler:
+                await z.spieler.starten(s, "Regie")
+                self.belegt_bis = time.monotonic() + z.spieler.dauer_ms(s) / 1000
+            return
         if effekt in LICHT:
             name, dauer, _ = LICHT[effekt]
             await z.aktion(LichtAktion(name=name, dauer_ms=dauer), dauer_ms=dauer, quelle="Regie")

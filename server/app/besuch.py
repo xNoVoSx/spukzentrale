@@ -103,7 +103,9 @@ class Besuch:
     def _darf_sprechen(self) -> bool:
         if self.pausiert or self.z.ki.laeuft:
             return False
-        return not (self.z.spieler and self.z.spieler.laufend)
+        sp = self.z.spieler
+        # Szenen des Regisseurs sind kurz: die Stimme wartet mit dem Abspielen, bis sie vorbei sind (ki.py)
+        return not (sp and sp.laufend and sp.laufend.get("quelle") != "Regie")
 
     # ------------------------------------------------------------------
     async def sensor(self, a: Ausloeser, an: bool, quelle: str) -> None:

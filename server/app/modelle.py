@@ -21,6 +21,16 @@ KATEGORIEN = {
     "wind": "Wind",
     "kette": "Kette",
     "kettensaege": "Kettensäge",
+    "werwolf": "Werwolf",
+    "tuer": "Knarrende Tür",
+    "schritte": "Schritte",
+    "kraehe": "Krähen",
+    "glocke": "Totenglocke",
+    "spieluhr": "Spieluhr",
+    "zombie": "Zombie",
+    "fluestern": "Geisterflüstern",
+    "klopfen": "Klopfen/Poltern",
+    "tiere": "Eule/Fledermäuse",
     "stimme": "Stimme",
     "reaktion": "KI-Reaktion",
     "sonstiges": "Sonstiges",
@@ -37,7 +47,8 @@ AktionName = Literal[
     "keine", "blitz", "env_blitz", "schreck", "blackout", "welle", "alle_an", "puls", "test", "flackern", "env_puls",
 ]
 Kategorie = Literal[
-    "donner", "schrei", "lachen", "herz", "wind", "kette", "kettensaege", "stimme", "reaktion", "sonstiges", "system",
+    "donner", "schrei", "lachen", "herz", "wind", "kette", "kettensaege", "werwolf", "tuer", "schritte", "kraehe",
+    "glocke", "spieluhr", "zombie", "fluestern", "klopfen", "tiere", "stimme", "reaktion", "sonstiges", "system",
 ]
 
 
@@ -110,6 +121,8 @@ class Stimmung(BaseModel):
 
 class Stimmungen(BaseModel):
     liste: list[Stimmung] = Field(default_factory=list)
+    # welche eingebauten Stimmungen schon angelegt wurden (neue Versionen ergänzen nur neue)
+    vorgaben_version: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +189,7 @@ class Medien(BaseModel):
 # ---------------------------------------------------------------------------
 class Schritt(BaseModel):
     t_ms: int = Field(0, ge=0, le=600000)
-    typ: Literal["fx", "aktion", "stimmung"] = "fx"
+    typ: Literal["fx", "aktion", "stimmung", "musik"] = "fx"
     # fx: entweder ein bestimmter Sound oder ein zufälliger aus einer Kategorie
     fx_id: str | None = None
     kategorie: Kategorie | None = None
@@ -186,6 +199,8 @@ class Schritt(BaseModel):
     aktion: LichtAktion | None = None
     # stimmung: Grundbeleuchtung für dauer_ms wechseln, danach zurück
     stimmung_id: str | None = None
+    # musik: Hintergrundmusik für dauer_ms aus („stille“) bzw. leise, danach wieder normal
+    musik: Literal["stille", "leise"] = "stille"
     dauer_ms: int = Field(10000, ge=100, le=600000)
 
 
@@ -220,6 +235,7 @@ class Regel(BaseModel):
 class Ereignisse(BaseModel):
     min_abstand_s: int = Field(15, ge=0, le=600)
     regeln: list[Regel] = Field(default_factory=list)
+    vorgaben_version: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +376,7 @@ class KiEinst(BaseModel):
     # Regisseur (Zustand.regie_an)
     regie_abstand_s: int = Field(15, ge=5, le=300)    # in Pausen frühestens so oft ein Effekt
     regie_max_s: int = Field(10, ge=2, le=60)         # längere Sounds nimmt der Regisseur nicht
+    regie_szene_max_s: int = Field(15, ge=2, le=120)  # längere Szenen nimmt der Regisseur nicht
 
 
 class Mqtt(BaseModel):

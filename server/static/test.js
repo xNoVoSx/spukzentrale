@@ -435,6 +435,7 @@ let testInfo = null;
 
 async function testInfoLaden() {
   try {
+    window.simulationStand = await api("GET", "/api/test/simulation");
     testInfo = await api("GET", "/api/test");
     aktualisieren(["test"]);
   } catch { /* Toast kommt von api() */ }
@@ -509,11 +510,15 @@ bereich("test-buehne", "test", ["test", "daten"], () => {
     </div>`;
 }, () => buehneAnimieren());
 
-bereich("test-jetzt", "test", ["test", "zustand", "protokoll"], () => `
+bereich("test-jetzt", "test", ["test", "zustand", "protokoll", "ki"], () => `
   <div class="karte">
     <h2>Was gerade passiert</h2>
     <ul class="protokoll" id="test-klaenge"></ul>
-    <p class="hinweis">Musik: ${esc(S.ambiente_jetzt || "–")}</p>
+    <p class="hinweis">Musik: ${esc(S.ambiente_jetzt || "–")}${S.szene ? ` · Szene: ${esc(S.szene.name)}` : ""}</p>
+    ${kiStatus.regie ? `<h3>🎬 Regisseur ${S.zustand.regie_an ? "" : "(aus)"}</h3>
+    <ul class="protokoll">
+      ${kiStatus.regie.verlauf.slice(0, 5).map((e) => `<li><time>${zeit(e.zeit)}</time><span><b>${esc(e.effekt || "–")}</b> · ${esc(e.grund)}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}
+    </ul>` : ""}
     <h3>Protokoll</h3>
     <ul class="protokoll">
       ${(S.protokoll || []).slice(0, 12).map((p) => `<li class="${p.art === "fehler" ? "fehler" : ""}"><time>${zeit(p.zeit)}</time><span>${esc(p.text)}</span></li>`).join("")}
@@ -523,12 +528,23 @@ bereich("test-jetzt", "test", ["test", "zustand", "protokoll"], () => `
 bereich("test-besuch", "test", ["test", "ki", "daten"], () => {
   const r = testInfo?.rollen || {};
   const b = kiStatus.besuch;
+  const sim = window.simulationStand;
   const knopf = (rolle, an, text) => `<button type="button" class="klein" data-aktion="test-sensor" data-rolle="${rolle}" data-an="${an ? 1 : 0}" ${r[rolle] ? "" : "disabled"}>${text}</button>`;
   const e = kiStatus.verlauf?.[0];
   return `
     <div class="karte">
       <h2>Besucher spielen ${b ? `<span class="marke ${b.zustand === "leer" || b.zustand === "nachlauf" ? "" : "orange"}">${esc(b.text)}</span>` : ""}</h2>
       <p class="hinweis">Löst die Auslöser genau wie Home Assistant aus (gleiche Sperren und Regeln).</p>
+      <h3>Besuch simulieren</h3>
+      <p class="hinweis">Schaltet die Sensoren nach Drehbuch; die KI bekommt statt des Kamerabilds eine Beschreibung der
+        Leute (zufällige Gruppe). So laufen Besuchs-Ablauf, KI-Stimme und Regisseur wie draußen.</p>
+      ${sim?.laeuft
+        ? `<div class="knopfreihe"><span class="marke orange">${esc(sim.drehbuecher[sim.drehbuch] || sim.drehbuch)} · ${sim.vergangen}/${Math.round(sim.dauer)} s</span>
+             <button type="button" class="klein" data-aktion="test-sim-stopp">⏹ Abbrechen</button></div>
+           <p class="hinweis">${esc(sim.schritt)}</p>`
+        : `<div class="knopfreihe" style="flex-wrap:wrap">${Object.entries(sim?.drehbuecher || {}).map(([k, t]) =>
+            `<button type="button" class="klein lila" data-aktion="test-sim" data-drehbuch="${k}">▶️ ${esc(t)}</button>`).join("")}</div>`}
+      <h3>Von Hand</h3>
       <div class="test-sensoren">
         <span>🚶 Weg${r.fern ? "" : " <small>(kein Auslöser mit Rolle „Weg“)</small>"}</span>${knopf("fern", true, "Person erkannt")}${knopf("fern", false, "weg")}
         <span>🚪 Tür${r.nah ? "" : " <small>(kein Auslöser mit Rolle „Tür“)</small>"}</span>${knopf("nah", true, "Person erkannt")}${knopf("nah", false, "weg")}
@@ -635,6 +651,8 @@ document.addEventListener("click", async (ev) => {
       break;
     }
     case "test-bild-weg": await api("DELETE", "/api/test/bild"); await testInfoLaden(); break;
+    case "test-sim": window.simulationStand = await api("POST", "/api/test/simulation", { drehbuch: el.dataset.drehbuch }); aktualisieren(["test"]); break;
+    case "test-sim-stopp": window.simulationStand = await api("DELETE", "/api/test/simulation"); aktualisieren(["test"]); break;
     case "test-kategorie": await api("POST", `/api/fx/kategorie/${el.dataset.kategorie}/abspielen`); break;
     case "test-szene": await api("POST", `/api/szenen/${el.dataset.id}/start`); break;
   }

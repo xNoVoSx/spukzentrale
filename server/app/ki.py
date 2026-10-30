@@ -137,6 +137,7 @@ class KiStimme:
         self.letztes_bild: bytes | None = None   # nur im Speicher, für die KI-Zentrale
         self.letztes_bild_zeit = 0.0
         self.testbild: bytes | None = None       # PC-Test: dieses Bild statt der Kamera (nur im Speicher)
+        self.testszene: str | None = None        # PC-Test (Simulation): Beschreibung statt Kamerabild
 
     # ------------------------------------------------------------------
     def wav(self, sid: str) -> bytes | None:
@@ -151,6 +152,8 @@ class KiStimme:
 
     # ------------------------------------------------------------------
     async def _standbild(self, c: httpx.AsyncClient, kamera: str, breite: int | None = None) -> bytes:
+        if self.testszene:
+            return b""                           # die KI liest die Beschreibung (siehe _satz)
         if self.testbild:
             return self.testbild
         ha = self.z.einst.homeassistant
@@ -185,6 +188,9 @@ class KiStimme:
                     {"type": "image_url",
                      "image_url": {"url": f"data:{bild_typ(bild)};base64," + base64.b64encode(bild).decode()}},
                     {"type": "text", "text": "\n".join(hinweis)},
+                ] if bild else [
+                    {"type": "text", "text": "(Test ohne Kamera – so sieht es die Kamera gerade: " + (self.testszene or "")
+                     + ")\n" + "\n".join(hinweis)},
                 ]},
             ],
             "max_tokens": 200,
@@ -251,7 +257,8 @@ class KiStimme:
                 async with asyncio.timeout(k.zeitlimit_s):
                     bild = await self._standbild(c, kamera)
                     zeiten["bild"] = round(time.monotonic() - t0, 1)
-                    self.letztes_bild, self.letztes_bild_zeit = bild, eintrag["zeit"]
+                    if bild:
+                        self.letztes_bild, self.letztes_bild_zeit = bild, eintrag["zeit"]
                     # Satz kommt per Stream vor der Beschreibung: Stimme startet, während das Modell weiterschreibt
                     satz_da: asyncio.Future[tuple[str, str]] = asyncio.get_running_loop().create_future()
                     denken = asyncio.create_task(self._satz(

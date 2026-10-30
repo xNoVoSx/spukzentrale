@@ -611,14 +611,34 @@ async def test_info(request: Request):
 @router.post("/api/test/sensor")
 async def test_sensor(request: Request, d: TestSensor):
     """Wie ein Personensensor bzw. die Klingel in Home Assistant: läuft genau den echten Weg (inkl. Sperren)."""
-    z = zentrale(request)
-    a = next((a for a in z.einst.ausloeser if a.aktiv and a.rolle == d.rolle), None)
-    if a is None:
-        raise HTTPException(404, f"Kein aktiver Auslöser mit der Rolle „{d.rolle}“")
-    if not d.an:
-        z.ausloeser_aus(a.id)
-        return {"ausgeloest": False}
-    return {"ausgeloest": await z.ausloeser(a.id, f"Test: {a.name}")}
+    try:
+        return {"ausgeloest": await zentrale(request).test_sensor(d.rolle, d.an)}
+    except KeyError:
+        raise HTTPException(404, f"Kein aktiver Auslöser mit der Rolle „{d.rolle}“") from None
+
+
+class SimulationStart(BaseModel):
+    drehbuch: str = Field(max_length=40)
+
+
+@router.get("/api/test/simulation")
+async def simulation_info(request: Request):
+    return zentrale(request).simulation.info()
+
+
+@router.post("/api/test/simulation")
+async def simulation_start(request: Request, d: SimulationStart):
+    try:
+        await zentrale(request).simulation.starten(d.drehbuch)
+    except KeyError:
+        raise HTTPException(404, "Dieses Drehbuch gibt es nicht") from None
+    return zentrale(request).simulation.info()
+
+
+@router.delete("/api/test/simulation")
+async def simulation_stopp(request: Request):
+    await zentrale(request).simulation.stoppen()
+    return zentrale(request).simulation.info()
 
 
 @router.post("/api/test/bild")

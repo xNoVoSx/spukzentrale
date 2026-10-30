@@ -39,7 +39,9 @@ const EFFEKT_NAMEN = {
   neon: "Kaputte Röhre", zufall: "Zufall", musik: "Zur Musik", spektrum: "Spektrum (Bass → Höhen)", beat: "Beat-Blitz",
 };
 const KATEGORIE_SYMBOL = {
-  donner: "⚡", schrei: "😱", lachen: "🧙", herz: "❤️", wind: "🌬️", kette: "⛓️", kettensaege: "🪚", stimme: "🗣️", sonstiges: "👻", system: "🔧",
+  donner: "⚡", schrei: "😱", lachen: "🧙", herz: "❤️", wind: "🌬️", kette: "⛓️", kettensaege: "🪚", werwolf: "🐺", tuer: "🚪",
+  schritte: "👣", kraehe: "🐦‍⬛", glocke: "🔔", spieluhr: "🎵", zombie: "🧟", fluestern: "👻", klopfen: "💥", tiere: "🦉",
+  stimme: "🗣️", reaktion: "🤫", sonstiges: "👽", system: "🔧",
 };
 const PLAN_FARBEN = ["#ff7a1a", "#9b6bff", "#5fd17a", "#ffd166", "#4cc9f0", "#ff4d5e"];
 const AKTION_SYMBOL = { blitz: "⚡", schreck: "😱", blackout: "🌑", welle: "🌊", puls: "💓", alle_an: "☀️", flackern: "🕯️" };
@@ -126,6 +128,10 @@ function empfangen(m) {
         kiBildStand = Date.now();
       }
       aktualisieren(["ki"]);
+      break;
+    case "simulation":
+      window.simulationStand = m;
+      aktualisieren(["test"]);
       break;
     case "besuch":
       kiStatus.besuch = m;
@@ -645,6 +651,7 @@ function schrittText(s) {
     return `${KATEGORIE_SYMBOL[s.kategorie] || "🔊"} ${quelle}`;
   }
   if (s.typ === "aktion") return `💡 ${AKTION_NAMEN[s.aktion?.name] || "?"}`;
+  if (s.typ === "musik") return `🎵 Musik ${s.musik === "leise" ? "leise" : "aus"} (${dauer(s.dauer_ms)})`;
   return `🎨 ${S.stimmungen.find((x) => x.id === s.stimmung_id)?.name ?? "?"} (${dauer(s.dauer_ms)})`;
 }
 
@@ -1155,7 +1162,7 @@ async function fxBearbeiten(id) {
 
 // --- Szenen-Editor ---
 function schrittFelder(s, i) {
-  const typen = [["fx", "🔊 Sound"], ["aktion", "💡 Licht"], ["stimmung", "🎨 Stimmung"]];
+  const typen = [["fx", "🔊 Sound"], ["aktion", "💡 Licht"], ["stimmung", "🎨 Stimmung"], ["musik", "🎵 Musik"]];
   let inhalt = "";
   if (s.typ === "fx") {
     const quellen = [["", "– bestimmter Sound –"], ...kategorien().map(([k, n]) => [`k:${k}`, `zufällig: ${n}`]),
@@ -1167,6 +1174,12 @@ function schrittFelder(s, i) {
         <label class="feld"><span>Licht</span><select data-schritt="${i}" data-feld="licht">${optionen([["auto", "wie beim Sound"], ["keine", "kein Licht"], ["eigen", "eigenes"]], s.licht)}</select></label>
       </div>
       ${s.licht === "eigen" ? `<div data-schritt-aktion="${i}">${lichtAktionFelder(s.aktion, `a${i}`, false)}</div>` : ""}`;
+  } else if (s.typ === "musik") {
+    inhalt = `
+      <div class="feldreihe">
+        <label class="feld"><span>Hintergrundmusik</span><select data-schritt="${i}" data-feld="musik">${optionen([["stille", "verstummt (Totenstille)"], ["leise", "ganz leise"]], s.musik || "stille")}</select></label>
+        <label class="feld"><span>Dauer (s)</span><input type="number" min="0.1" max="600" step="0.1" value="${s.dauer_ms / 1000}" data-schritt="${i}" data-feld="dauer_s"></label>
+      </div>`;
   } else if (s.typ === "aktion") {
     inhalt = `<div data-schritt-aktion="${i}">${lichtAktionFelder(s.aktion || { name: "blitz", zonen: [], dauer_ms: 1000, staerke: 100, param: 0 }, `a${i}`, false, false)}</div>`;
   } else {
@@ -1215,6 +1228,7 @@ async function szeneBearbeiten(id) {
       <button type="button" class="klein" data-aktion="schritt-neu" data-typ="fx">+ Sound</button>
       <button type="button" class="klein" data-aktion="schritt-neu" data-typ="aktion">+ Licht</button>
       <button type="button" class="klein" data-aktion="schritt-neu" data-typ="stimmung">+ Stimmung</button>
+      <button type="button" class="klein" data-aktion="schritt-neu" data-typ="musik">+ Musik</button>
     </div>`,
   () => {
     editorUebernehmen();
@@ -1341,6 +1355,7 @@ const AKTIONEN = {
     if (s.typ === "fx") s.kategorie = "donner";
     if (s.typ === "aktion") s.aktion = { name: "blitz", zonen: [], dauer_ms: 1000, staerke: 100, param: 0 };
     if (s.typ === "stimmung") s.stimmung_id = S.stimmungen[0]?.id ?? null;
+    if (s.typ === "musik") { s.musik = "stille"; s.dauer_ms = 8000; }
     entwurf.schritte.push(s);
     editorZeichnen();
   },
@@ -1686,6 +1701,7 @@ bereich("ki-einstellungen", "ki", ["daten", "ki-stimmen"], () => {
       <div class="feldreihe">
         ${feld("regie_abstand_s", "In Pausen frühestens alle (s)", "number", ki.regie_abstand_s, 'min="5" max="300"')}
         ${feld("regie_max_s", "Sounds höchstens (s lang)", "number", ki.regie_max_s, 'min="2" max="60"')}
+        ${feld("regie_szene_max_s", "Szenen höchstens (s lang)", "number", ki.regie_szene_max_s, 'min="2" max="120"')}
       </div>
       <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`)
   ].join("");
