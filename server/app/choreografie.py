@@ -3,9 +3,14 @@ mitpulsiert (Novos: „wir machen zu wenig außer aufblitzen“; die Figuren hä
 nicht ständig überall an sein).
 
 Läuft nur, wenn die Grundbeleuchtung zur Musik gehört (Zonen-Effekte musik/spektrum/beat), die Show und das Ambiente
-an sind, keine Szene/Effekt-Stimmung läuft und einstellbar (LichtEinst.choreografie). Die Muster wechseln auf
-Phrasengrenzen (16 Schläge, sonst ~10 s), an ruhigen Stellen wird es fast dunkel, im Gesang ruhiger, sonst je nach
-Stimmung des Stücks. Helligkeit/Tempo kommen aus der Grundbeleuchtung; grund_max hält alles unter den Effekten.
+an sind, keine Szene/Effekt-Stimmung läuft und einstellbar (LichtEinst.choreografie).
+
+Energie statt Zufall (Prüfbericht 31.10.: Helligkeit folgte der Lautstärke kaum, Drops lösten nichts aus): Die
+Pegelkurve aus der Musikanalyse (0..100 je Sekunde) bestimmt die Energiestufe der kommenden Phrase gegen den Median
+des Stücks – leise: 1–3 Zonen glimmen, mittel: wechselnde Teil-Muster, laut: alle/Spektrum/Schlag. Ein Drop (Pegel
+springt in 2 s um ≥ 12) schaltet sofort alles an, ohne auf die Phrasengrenze zu warten. Wechsel sonst auf
+Phrasengrenzen (16 Schläge, sonst ~10 s). Nie ganz schwarz: auch die ruhigste Stufe lässt alle Zonen schwach glühen.
+Helligkeit/Tempo kommen aus der Grundbeleuchtung; grund_max hält alles unter den Effekten.
 """
 
 import asyncio
@@ -24,24 +29,28 @@ log = logging.getLogger(__name__)
 MUSIK_EFFEKTE = {"musik", "spektrum", "beat"}
 SCHLAEGE_PRO_PHRASE = 16
 PHRASE_OHNE_TAKT_S = 10.0
-# Gewichte je Stimmung des Stücks (siehe musikanalyse.STIMMUNGS_KLASSEN)
-GEWICHTE = {
-    "duester":    {"alle": 1, "aussen_aus": 2, "mitte": 3, "wechsel": 2, "spektrum": 1, "beat": 1, "geist": 3},
-    "ruhig":      {"alle": 1, "aussen_aus": 2, "mitte": 3, "wechsel": 1, "spektrum": 1, "beat": 0, "geist": 3},
-    "dramatisch": {"alle": 2, "aussen_aus": 2, "mitte": 1, "wechsel": 2, "spektrum": 3, "beat": 3, "geist": 1},
-    "verspielt":  {"alle": 2, "aussen_aus": 1, "mitte": 1, "wechsel": 3, "spektrum": 2, "beat": 2, "geist": 1},
+DROP_DB = 12                    # Pegelsprung (Analyse-Skala 0..100 ≈ 40 dB) innerhalb von 2 s = Drop
+LEISE, LAUT = -8, 3             # Phrasen-Pegel gegen den Median des Stücks
+# Muster je Energiestufe, gewichtet nach der Stimmung des Stücks (siehe musikanalyse.STIMMUNGS_KLASSEN)
+STUFEN = {
+    "leise":  {"ruhig": 3, "mitte": 2, "geist": 2},
+    "mittel": {"aussen_aus": 3, "wechsel": 2, "mitte": 1, "geist": 1, "spektrum": 1},
+    "laut":   {"alle": 3, "spektrum": 2, "beat": 2, "aussen_aus": 1},
 }
+STIMMUNGS_BONUS = {"duester": {"geist": 2, "mitte": 1}, "ruhig": {"geist": 2, "ruhig": 1},
+                   "dramatisch": {"beat": 2, "spektrum": 1}, "verspielt": {"wechsel": 2, "beat": 1}}
 NAMEN = {"alle": "alle zur Musik", "aussen_aus": "außen dunkel", "mitte": "nur die Mitte", "wechsel": "jede zweite Zone",
          "spektrum": "Spektrum", "beat": "Schlag-Blitze", "geist": "ein Geist wandert", "ruhig": "ruhige Stelle",
-         "gesang": "Gesang"}
+         "gesang": "Gesang", "drop": "Drop – alles an"}
 
 
 def muster(name: str, n: int, vorbild: Zone) -> list[Zone]:
     """Zonen-Muster aus der Grundbeleuchtung (Tempo, Stärke, Basis der ersten Zone)."""
     an = lambda e="musik", **k: Zone(**{"e": e, "tempo": vorbild.tempo, "staerke": vorbild.staerke,  # noqa: E731
                                         "basis": vorbild.basis, **k})
-    aus = Zone(e="aus", tempo=50, staerke=0, basis=0)
-    mitte = {n // 2} if n % 2 else {n // 2 - 1, n // 2}
+    # „aus“ heißt hier: schwach glimmen statt schwarz – Dunkelheit ohne Folge wirkt kaputt (Novos)
+    aus = Zone(e="atmen", tempo=15, staerke=max(6, vorbild.basis), basis=max(3, vorbild.basis // 2))
+    mitte = set(range(max(0, n // 2 - 1), min(n, n // 2 + 2))) if n >= 5 else ({n // 2} if n % 2 else {n // 2 - 1, n // 2})
     if name == "alle":
         return [an() for _ in range(n)]
     if name == "aussen_aus":
@@ -56,13 +65,14 @@ def muster(name: str, n: int, vorbild: Zone) -> list[Zone]:
         return [an("beat") if i % 2 else aus.model_copy() for i in range(n)]
     if name == "geist":
         return [an("wandern", tempo=25, basis=0) for _ in range(n)]
-    if name == "ruhig":                         # ruhige Stelle: fast alles dunkel, eine Zone atmet
+    if name == "ruhig":                         # ruhige Stelle: fast dunkel, eine Zone atmet deutlich
         k = random.randrange(n)
-        return [an("atmen", tempo=20, staerke=max(20, vorbild.staerke // 2), basis=0) if i == k else aus.model_copy()
+        return [an("atmen", tempo=20, staerke=max(30, vorbild.staerke // 2), basis=4) if i == k else aus.model_copy()
                 for i in range(n)]
-    if name == "gesang":                        # Gesang: ruhiges Glühen in der Mitte, außen dunkel
-        return [an() if i in mitte or (n > 3 and i in (n // 2 - 1, n // 2 + 1)) else aus.model_copy()
-                for i in range(n)]
+    if name == "gesang":                        # Gesang: ruhiges Glühen in der Mitte, außen glimmend
+        return [an() if i in mitte else aus.model_copy() for i in range(n)]
+    if name == "drop":                          # Drop: alles auf einmal, mit Schlag
+        return [an("beat" if i % 2 else "musik") for i in range(n)]
     return [an() for _ in range(n)]
 
 
@@ -93,10 +103,14 @@ class Choreografie:
                 z.choreo, self.aktuell = None, ""
                 await z._licht_senden()
             return
-        if jetzt < self.naechster_wechsel:
-            return
         stueck, pos = z.musik_lage()
-        name, bis_s = self._waehlen(stueck, pos)
+        drop = self._drop(stueck, pos)
+        if jetzt < self.naechster_wechsel and not (drop and self.aktuell != "drop"):
+            return
+        if drop and self.aktuell != "drop":
+            name, bis_s = "drop", self._bis_phrase(stueck.analyse, pos)
+        else:
+            name, bis_s = self._waehlen(stueck, pos)
         self.naechster_wechsel = jetzt + bis_s
         if name == self.aktuell:
             return
@@ -107,22 +121,57 @@ class Choreografie:
         if z.overlay is None:
             await z._licht_senden()
 
+    @staticmethod
+    def _phrase(a) -> float:
+        if not a or not a.bpm:
+            return PHRASE_OHNE_TAKT_S
+        phrase = SCHLAEGE_PRO_PHRASE * 60.0 / a.bpm
+        while phrase > 16:
+            phrase /= 2
+        while phrase < 6:
+            phrase *= 2
+        return phrase
+
+    def _bis_phrase(self, a, pos) -> float:
+        """Sekunden bis zur nächsten Phrasengrenze (auf dem Schlag)."""
+        phrase = self._phrase(a)
+        if not a or not a.bpm or pos is None:
+            return phrase
+        rest = phrase - ((pos - a.beat0_s) % phrase)
+        return rest if rest > 2 else rest + phrase
+
+    @staticmethod
+    def _drop(stueck, pos) -> bool:
+        a = stueck.analyse if stueck else None
+        if not a or not a.pegel or pos is None:
+            return False
+        i = int(pos)
+        if i < 2 or i >= len(a.pegel):
+            return False
+        return a.pegel[i] - min(a.pegel[i - 2:i]) >= DROP_DB
+
+    @staticmethod
+    def _energie(a, pos: float, dauer: float) -> str:
+        """leise/mittel/laut: Pegel der kommenden Phrase gegen den Median des Stücks (bzw. Anstieg zur Vorphrase)."""
+        if not a.pegel:
+            return "mittel"
+        i0, i1 = int(pos), max(int(pos) + 1, int(pos + dauer))
+        teil = a.pegel[i0:i1] or a.pegel[-1:]
+        vorher = a.pegel[max(0, i0 - int(dauer)):i0] or teil
+        median = sorted(a.pegel)[len(a.pegel) // 2]
+        jetzt = sum(teil) / len(teil)
+        if jetzt - median <= LEISE:
+            return "leise"
+        if jetzt - median >= LAUT or jetzt - sum(vorher) / len(vorher) >= 10:
+            return "laut"
+        return "mittel"
+
     def _waehlen(self, stueck, pos) -> tuple[str, float]:
         """(Muster, Sekunden bis zum nächsten Wechsel) passend zur Stelle im Stück."""
         a = stueck.analyse if stueck else None
         if a is None or pos is None:
-            return self._zufall("duester"), PHRASE_OHNE_TAKT_S
-        # Länge einer Phrase und Zeit bis zur nächsten Phrasengrenze (auf dem Schlag)
-        if a.bpm:
-            phrase = SCHLAEGE_PRO_PHRASE * 60.0 / a.bpm
-            while phrase > 16:
-                phrase /= 2
-            while phrase < 6:
-                phrase *= 2
-            rest = phrase - ((pos - a.beat0_s) % phrase)
-            bis = rest if rest > 2 else rest + phrase
-        else:
-            bis = PHRASE_OHNE_TAKT_S
+            return self._zufall("mittel", "duester"), PHRASE_OHNE_TAKT_S
+        bis = self._bis_phrase(a, pos)
         for b0, b1 in a.ruhig:
             if b0 <= pos < b1:
                 return "ruhig", max(1.0, min(bis, b1 - pos))
@@ -133,8 +182,12 @@ class Choreografie:
                 return "gesang", max(1.0, min(bis, g1 - pos))
             if pos < g0 < pos + bis:
                 bis = g0 - pos
-        return self._zufall(a.stimmung), max(1.0, bis)
+        return self._zufall(self._energie(a, pos, bis), a.stimmung), max(1.0, bis)
 
-    def _zufall(self, stimmung: str) -> str:
-        g = {k: v for k, v in GEWICHTE.get(stimmung, GEWICHTE["duester"]).items() if v and k != self.aktuell}
+    def _zufall(self, stufe: str, stimmung: str) -> str:
+        g = dict(STUFEN[stufe])
+        for k, v in STIMMUNGS_BONUS.get(stimmung, {}).items():
+            if k in g:
+                g[k] += v
+        g = {k: v for k, v in g.items() if k != self.aktuell} or g
         return random.choices(list(g), weights=list(g.values()))[0]

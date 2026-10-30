@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-NICHT_FUER_REGIE = {"stimme", "reaktion", "system"}
+NICHT_FUER_REGIE = {"stimme", "reaktion", "system", "spieluhr", "sonstiges"}   # Spieluhr: eigene Musik, nur gezielt
 # nur Licht – Name: (Aktion, Dauer ms, Beschreibung fürs Modell)
 LICHT = {
     "licht_blitz": ("blitz", 400, "ein greller Blitz"),
@@ -127,11 +127,13 @@ class Regie:
         z = self.z
         stufe = z.zustand.gruselstufe
         max_ms = z.einst.ki.regie_max_s * 1000
-        kats: list[str] = []
+        # alle Kategorien mit Sounds – unabhängig davon, ob ihre Zufallsregel an ist (die steuert nur den Zufall);
+        # die Gruselstufe einer Regel gilt aber auch hier
+        stufe_min: dict[str, int] = {}
         for r in z.ereignisse.regeln:
-            if (r.aktiv and r.typ == "kategorie" and r.gruselstufe_min <= stufe and r.ziel not in NICHT_FUER_REGIE
-                    and r.ziel not in kats):
-                kats.append(r.ziel)
+            if r.typ == "kategorie":
+                stufe_min[r.ziel] = min(stufe_min.get(r.ziel, 3), r.gruselstufe_min)
+        kats = [k for k in KATEGORIEN if k not in NICHT_FUER_REGIE and stufe_min.get(k, 1) <= stufe]
         aus = {"keiner": "kein Effekt, Stille wirkt auch"}
         # einzelne Sounds mit Beschreibung (eigene oder aus der Analyse) – so kann der Regisseur gezielt wählen
         for k in kats:
@@ -197,7 +199,7 @@ class Regie:
     def _darf(self) -> bool:
         z = self.z
         return (self.aktiv and not self.denkt and not z.ki.laeuft and not (z.spieler and z.spieler.laufend)
-                and self.frei_in() == 0)
+                and self.frei_in() == 0 and time.monotonic() >= z.spieluhr_bis)   # Spieluhr = eigene Musik
 
     # ------------------------------------------------------------------
     async def nach_satz(self, satz: str, dauer_ms: int) -> None:

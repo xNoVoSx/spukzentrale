@@ -12,22 +12,23 @@ LICHT_JE_KATEGORIE: dict[str, LichtAktion | None] = {
     "donner": LichtAktion(name="env_blitz", dauer_ms=0, staerke=100),
     "schrei": LichtAktion(name="schreck", dauer_ms=2500, staerke=100, param=80),
     "lachen": LichtAktion(name="flackern", dauer_ms=0, staerke=90),
+    # Effekt-Licht mindestens 80 % – sonst verschwindet es im Grundlicht (Prüfbericht 31.10.)
     "herz": LichtAktion(name="env_puls", dauer_ms=0, staerke=80),
-    "kette": LichtAktion(name="flackern", dauer_ms=0, staerke=60),
+    "kette": LichtAktion(name="flackern", dauer_ms=0, staerke=85),
     "kettensaege": LichtAktion(name="flackern", dauer_ms=0, staerke=100),
-    "stimme": LichtAktion(name="env_puls", dauer_ms=0, staerke=60),
+    "stimme": LichtAktion(name="env_puls", dauer_ms=0, staerke=80),
     "reaktion": LichtAktion(name="flackern", dauer_ms=900, staerke=80),
     "werwolf": LichtAktion(name="env_puls", dauer_ms=0, staerke=90),
-    "tuer": LichtAktion(name="flackern", dauer_ms=0, staerke=50),
+    "tuer": LichtAktion(name="flackern", dauer_ms=0, staerke=85),
     "schritte": LichtAktion(name="welle", dauer_ms=1500, staerke=70),
-    "kraehe": LichtAktion(name="puls", dauer_ms=600, staerke=50),
+    "kraehe": LichtAktion(name="puls", dauer_ms=700, staerke=85),
     "glocke": LichtAktion(name="env_puls", dauer_ms=0, staerke=90),
-    "spieluhr": LichtAktion(name="env_puls", dauer_ms=0, staerke=60),   # eigene Musik: Licht folgt der Spieluhr
+    "spieluhr": LichtAktion(name="env_puls", dauer_ms=0, staerke=80),   # eigene Musik: Licht folgt der Spieluhr
     "zombie": LichtAktion(name="flackern", dauer_ms=0, staerke=70),
-    "fluestern": LichtAktion(name="env_puls", dauer_ms=0, staerke=40),
+    "fluestern": LichtAktion(name="env_puls", dauer_ms=0, staerke=80),
     "klopfen": LichtAktion(name="env_blitz", dauer_ms=0, staerke=80),
-    "tiere": LichtAktion(name="flackern", dauer_ms=800, staerke=40),
-    "wind": None,
+    "tiere": LichtAktion(name="flackern", dauer_ms=800, staerke=80),
+    "wind": LichtAktion(name="welle", dauer_ms=2500, staerke=80),
     "sonstiges": None,
     "system": None,
 }
@@ -38,7 +39,8 @@ def _alle(e: str, tempo=50, staerke=80, basis=5) -> list[Zone]:
 
 
 # (Version, in der die Stimmung dazukam, Stimmung) – siehe Zentrale._vorgaben_ergaenzen
-STIMMUNGEN_VERSION = 3
+STIMMUNGEN_VERSION = 4
+STIMMUNGEN_ERSETZT = {4: {"wetterleuchten"}}     # heller: der Blitz muss sichtbar sein (Prüfbericht 31.10.)
 STIMMUNGEN = [(1, s) for s in [
     Stimmung(id="gruselig", name="Gruselig ruhig", eingebaut=True, zonen=[
         Zone(e="flackern", tempo=40, staerke=55, basis=10),
@@ -67,7 +69,7 @@ STIMMUNGEN = [(1, s) for s in [
     Stimmung(id="ein-geist", name="Ein Geist", eingebaut=True, zonen=_alle("wandern", 22, 100, 0)),
     Stimmung(id="pingpong-langsam", name="Ping-Pong langsam", eingebaut=True, zonen=_alle("pingpong", 30, 95, 0)),
     Stimmung(id="pingpong-schnell", name="Ping-Pong schnell", eingebaut=True, zonen=_alle("pingpong", 85, 100, 0)),
-    Stimmung(id="wetterleuchten", name="Wetterleuchten", eingebaut=True, zonen=_alle("gewitter", 25, 35, 0)),
+    Stimmung(id="wetterleuchten", name="Wetterleuchten", eingebaut=True, zonen=_alle("gewitter", 45, 90, 3)),
     Stimmung(id="kaputte-roehre", name="Kaputte Röhre", eingebaut=True, zonen=[
         Zone(e="neon", tempo=60, staerke=95, basis=0), Zone(e="aus", basis=0), Zone(e="neon", tempo=40, staerke=90, basis=0),
         Zone(e="aus", basis=0), Zone(e="neon", tempo=75, staerke=95, basis=0)]),
@@ -93,10 +95,11 @@ def _ak(t, name, dauer, staerke=100, param=0) -> Schritt:
 
 
 # (Version, in der die Szene dazukam, Szene) – siehe Zentrale._vorgaben_ergaenzen
-SZENEN_VERSION = 4
+SZENEN_VERSION = 5
 # eingebaute Szenen, die eine neuere Version ersetzt (Version -> IDs): Dunkelheit endet jetzt immer mit etwas Gruseligem
 SZENEN_ERSETZT = {4: {"stromausfall", "totenstille", "geist-zieht-vorbei", "pingpong-geist", "wetterleuchten",
-                      "kaputte-roehre", "herzschlag-licht", "haus-atmet", "strobo-salve"}}
+                      "kaputte-roehre", "herzschlag-licht", "haus-atmet", "strobo-salve"},
+                  5: {"wetterleuchten"}}
 SZENEN = [(1, s) for s in [
     Szene(id="gewitterfront", name="Gewitterfront", gruselstufe=1, eingebaut=True, schritte=[
         Schritt(t_ms=0, typ="stimmung", stimmung_id="gewitternacht", dauer_ms=36000),
@@ -148,7 +151,7 @@ SZENEN = [(1, s) for s in [
         _st(0, "pingpong-langsam", 4000), _st(4000, "pingpong-schnell", 3000), _st(7000, "schwarz", 2000),
         _fx(7800, "lachen")]),
     Szene(id="wetterleuchten", name="Wetterleuchten", gruselstufe=1, eingebaut=True, schritte=[
-        _st(0, "wetterleuchten", 10000), _fx(5500, "donner", vol=50, licht="keine")]),
+        _st(0, "wetterleuchten", 10000), _fx(5500, "donner", vol=50)]),
     Szene(id="kaputte-roehre", name="Kaputte Röhre", gruselstufe=1, eingebaut=True, schritte=[
         _st(0, "kaputte-roehre", 8000), _fx(6500, "tuer")]),
     Szene(id="herzschlag-licht", name="Herzschlag-Licht", gruselstufe=2, eingebaut=True, schritte=[

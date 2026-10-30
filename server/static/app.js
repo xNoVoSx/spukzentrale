@@ -722,6 +722,9 @@ bereich("szenen-ereignisse", "szenen", ["daten", "medien"], () => {
       <p class="hinweis">Laufen, solange „Zufallsereignisse“ an ist. Jede Regel hat ihren eigenen Zufallstakt.</p>
       <label class="feld"><span>Mindestabstand zwischen zwei Ereignissen (s)</span>
         <input type="number" min="0" max="600" value="${e.min_abstand_s}" data-aenderung="regel-abstand"></label>
+      <div class="schalter-zeile"><div>Schrecks nur bei Besuch<small>ohne Besucher nur Atmosphäre (Wind, Krähen, Flüstern, Glocke, Donner, Licht-Szenen) –
+        Schreie, Kettensäge, Werwolf, Spieluhr usw. nur, wenn jemand da ist (Regisseur, Klingel)</small></div>
+        <label class="schalter"><input type="checkbox" ${e.schreck_nur_bei_besuch ? "checked" : ""} data-aenderung="regel-schreck"><i></i></label></div>
       ${e.regeln.map(regelZeile).join("")}
       <div class="knopfreihe">
         <button class="klein" data-aktion="regel-neu">+ Regel</button>
@@ -1626,6 +1629,9 @@ function aendern(el, live) {
     }
     case "regel-abstand":
       regelEntwurf.min_abstand_s = wert;
+      return;
+    case "regel-schreck":
+      regelEntwurf.schreck_nur_bei_besuch = wert;
       return;
     case "ausloeser": {
       const a = ausloeserEntwurf[Number(el.dataset.i)];

@@ -105,6 +105,7 @@ async def test_generator_wartet_auf_das_ende_des_gesangs():
     z.zustand.ereignisse_an = True
     z.ereignisse.min_abstand_s = 0
     z.ereignisse.regeln = [Regel(id="a", ziel="schrei", min_s=5, max_s=5)]
+    z.ereignisse.schreck_nur_bei_besuch = False       # hier geht es um die Abstimmung auf den Gesang
     pos = {"t": 0.0}
     z.musik_lage = lambda: (_stueck(), pos["t"])
     g = Generator(z)
@@ -116,3 +117,10 @@ async def test_generator_wartet_auf_das_ende_des_gesangs():
         if len(z.gespielt) > vorher:
             break
     assert z.gespielt == ["schrei"] and t >= 30          # erst nach dem Gesang (10–30 s)
+
+
+
+def test_schreck_ohne_besucher_nicht_per_zufall():
+    from app.ereignisse import NUR_BEI_BESUCH
+    assert {"schrei", "kettensaege", "spieluhr", "schreck", "werwolf"} <= NUR_BEI_BESUCH
+    assert not {"wind", "kraehe", "fluestern", "glocke", "donner"} & NUR_BEI_BESUCH

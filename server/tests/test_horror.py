@@ -56,7 +56,9 @@ def test_musik_daempfen_und_von_selbst_zurueck():
             assert z.musik_daempfung is None and z.ton_effektiv().musik_vol == normal
             await z.musik_daempfen("leise", 5000)
             assert z.ton_effektiv().musik_vol == round(normal * 0.3)
-            await z.musik_normal()
+            await z.musik_daempfen("stille", 100)        # Stille geht vor, aber verlängert/verkürzt nicht
+            assert z.musik_daempfung[0] == "stille" and z.musik_daempfung[1] > time.monotonic() + 4
+            await z.musik_normal(sofort=True)
         asyncio.run(ablauf())
         assert z.ton_effektiv().musik_vol == normal
 

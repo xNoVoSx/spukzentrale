@@ -64,6 +64,8 @@ class Besuch:
         self.an: dict[str, bool] = {"fern": False, "nah": False}
         self.zuletzt_jemand = 0.0          # monotonic: letzter Moment mit Person
         self.pause_bis = 0.0               # time.time()
+        # Satz, der gerade nicht ging (Szene/KI beschäftigt): (Auslöser, Lage, Ersatz?, monotonic) – takt() holt nach
+        self.ausstehend: tuple[Ausloeser, str, bool, float] | None = None
         self.fern: Ausloeser | None = None  # für Nachfassen per Takt (Kamera, Lautstärke)
         self.nah: Ausloeser | None = None
         self._task: asyncio.Task | None = None
@@ -132,11 +134,15 @@ class Besuch:
         if a.rolle == "fern" and self.an["nah"]:
             self._melden()                                       # Tür hat Vorrang: niemanden auf dem Weg ansprechen
             return
+        if st in ("leer", "nachlauf") or (a.rolle == "nah" and st == "gelockt"):
+            await self._zufall_beenden()                         # Besucher gehen vor: eine Zufalls-Szene endet
         if a.rolle == "fern":
             if st in ("leer",):
                 self._wechsel("gelockt")
                 self.gelockt = 1
-                await self._sprechen(a, quelle, LOCKEN, ersatz=True)
+                if await self._sprechen(a, quelle, LOCKEN, ersatz=True) == "beschaeftigt":
+                    self.gelockt = 0                             # zählt erst, wenn es gesagt wurde
+                    self.ausstehend = (a, LOCKEN, True, time.monotonic())
             elif st == "gelockt":
                 await self._nachfassen(a, quelle)
             elif st == "tuer" and not self.an["nah"]:
@@ -154,12 +160,27 @@ class Besuch:
             if st in ("leer", "nachlauf"):
                 self._neu()
             self._wechsel("tuer")
-            self.tuer_gesagt = True
-            await self._sprechen(a, quelle, TUER, ersatz=True)
+            self.tuer_gesagt = True                              # gleichzeitige Tür-Meldungen nicht doppelt
+            if await self._sprechen(a, quelle, TUER, ersatz=True) == "beschaeftigt":
+                self.tuer_gesagt = False
+                self.ausstehend = (a, TUER, True, time.monotonic())
+
+    async def _zufall_beenden(self) -> None:
+        sp = self.z.spieler
+        if sp and sp.laufend and sp.laufend.get("quelle") == "Zufall":
+            log.info("Besuch beginnt: Zufalls-Szene %s endet", sp.laufend.get("id"))
+            await sp.stoppen()
 
     def klingel(self) -> None:
         """Klingel gedrückt: Szene läuft über den normalen Auslöser – KI hört auf und bleibt still."""
         self.z.ki.abbrechen = True
+        # eine gerade laufende Ansage endet – der Klingel-Schreck soll nicht über der Stimme liegen
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:                       # ohne laufende Event-Schleife (Tests): nichts zu stoppen
+            pass
+        else:
+            self.z._hintergrund(self.z.geraete.senden("sound", {"t": "sag_stop"}))
         self.klingel_zeit = time.monotonic()
         self.zuletzt_jemand = self.klingel_zeit
         self._wechsel("geklingelt")
@@ -175,7 +196,8 @@ class Besuch:
             return
         self.gelockt += 1
         lage = ZOEGERN.format(s=int(time.monotonic() - self.letzte_ansprache), satz=self.letzter_satz or "…")
-        await self._sprechen(a, quelle, lage, reaktion=False)
+        if await self._sprechen(a, quelle, lage, reaktion=False) == "beschaeftigt":
+            self.gelockt -= 1                                    # nicht verbraucht, takt() versucht es wieder
 
     async def _neue_leute(self, a: Ausloeser, quelle: str) -> None:
         """geht/nachlauf: kommt da schon die nächste Gruppe? Nur ansprechen, wenn niemand weggeht."""
@@ -243,6 +265,31 @@ class Besuch:
             self.abschied_gesagt = True
             self._wechsel("geht")
 
+    async def _nachholen(self, jetzt: float) -> None:
+        """Einen Satz, der beim Eintreffen nicht ging, nachholen – solange die Leute noch da sind (höchstens 20 s)."""
+        if not self.ausstehend:
+            return
+        a, lage, ersatz, seit = self.ausstehend
+        passt = (self.an.get(a.rolle) and jetzt - seit < 20
+                 and ((a.rolle == "fern" and self.zustand == "gelockt" and self.gelockt == 0 and not self.an["nah"])
+                      or (a.rolle == "nah" and self.zustand == "tuer" and not self.tuer_gesagt)))
+        if not passt:
+            self.ausstehend = None
+            return
+        if not self._darf_sprechen():
+            return
+        self.ausstehend = None
+        if a.rolle == "fern":
+            self.gelockt = 1
+        else:
+            self.tuer_gesagt = True
+        if await self._sprechen(a, f"{a.name} (nachgeholt)", lage, ersatz=ersatz) == "beschaeftigt":
+            if a.rolle == "fern":
+                self.gelockt = 0
+            else:
+                self.tuer_gesagt = False
+            self.ausstehend = (a, lage, ersatz, seit)
+
     def zuruecksetzen(self) -> None:
         """Frischer Besuch (PC-Test: jede Simulation beginnt bei „niemand da“), eine Pause bleibt."""
         pause = self.pause_bis
@@ -298,6 +345,7 @@ class Besuch:
         jemand = self.an["fern"] or self.an["nah"]
         if jemand:
             self.zuletzt_jemand = jetzt
+        await self._nachholen(jetzt)
         # Leute bleiben auf dem Weg stehen (Sensor bleibt an, kein neues Ereignis): einmal sanft nachfassen
         if st == "gelockt" and self.an["fern"] and not self.an["nah"] and self.fern and not self.z.ki.laeuft:
             if self.gelockt < k.locken_max and jetzt - self.letzte_ansprache >= k.locken_wiederholen_s:

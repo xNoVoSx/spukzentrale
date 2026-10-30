@@ -100,6 +100,11 @@ class Zentrale:
             for version, st in vorgaben.STIMMUNGEN:
                 if version > self.stimmungen.vorgaben_version and st.id not in vorhanden:
                     self.stimmungen.liste.append(st.model_copy(deep=True))
+            neu_st = {st.id: st for _, st in vorgaben.STIMMUNGEN}
+            for version, ids in vorgaben.STIMMUNGEN_ERSETZT.items():
+                if version > self.stimmungen.vorgaben_version:
+                    self.stimmungen.liste = [neu_st[s.id].model_copy(deep=True) if s.eingebaut and s.id in ids else s
+                                             for s in self.stimmungen.liste]
             self.stimmungen.vorgaben_version = vorgaben.STIMMUNGEN_VERSION
             speichere(pfade.CONFIG / "stimmungen.json", self.stimmungen)
         if self.szenen.liste and self.szenen.vorgaben_version == 0:
@@ -659,20 +664,34 @@ class Zentrale:
         if mid and self.zustand.ambiente_an:
             await self.ambiente_spielen(mid)
 
-    async def musik_daempfen(self, art: str, dauer_ms: int) -> None:
-        """Hintergrundmusik für dauer_ms aus („stille“) bzw. leise – danach von selbst wieder normal."""
-        self.musik_daempfung = (art, time.monotonic() + dauer_ms / 1000)
+    async def musik_daempfen(self, art: str, dauer_ms: int) -> float:
+        """Hintergrundmusik für dauer_ms aus („stille“) bzw. leise – danach von selbst wieder normal. Eine laufende
+        Dämpfung wird nur verlängert, nie verkürzt (eine Szene darf eine Spieluhr nicht vorzeitig beenden);
+        „stille“ geht vor „leise“."""
+        ende = time.monotonic() + dauer_ms / 1000
+        if self.musik_daempfung:
+            alt_art, alt_ende = self.musik_daempfung
+            ende = max(ende, alt_ende)
+            if alt_art == "stille":
+                art = "stille"
+        self.musik_daempfung = (art, ende)
         if self._daempfung_task:
             self._daempfung_task.cancel()
-        self._daempfung_task = asyncio.create_task(self._daempfung_ende(dauer_ms / 1000), name="musik-daempfung")
+        self._daempfung_task = asyncio.create_task(self._daempfung_ende(ende), name="musik-daempfung")
         await self.sound_konfigurieren()
+        return ende
 
-    async def _daempfung_ende(self, s: float) -> None:
-        await asyncio.sleep(s)
-        await self.musik_normal()
+    async def _daempfung_ende(self, ende: float) -> None:
+        await asyncio.sleep(max(0.0, ende - time.monotonic()))
+        await self.musik_normal(sofort=True)
 
-    async def musik_normal(self) -> None:
+    async def musik_normal(self, sofort: bool = False, eigenes_ende: float | None = None) -> None:
+        """sofort=False (Ende einer Szene): nur, wenn keine längere Dämpfung (z. B. Spieluhr) mehr läuft – war es
+        die eigene (eigenes_ende, z. B. abgebrochene Szene), endet sie sofort."""
         if self.musik_daempfung is None:
+            return
+        eigene = eigenes_ende is not None and abs(self.musik_daempfung[1] - eigenes_ende) < 0.05
+        if not (sofort or eigene) and self.musik_daempfung[1] > time.monotonic() + 0.2:
             return
         self.musik_daempfung = None
         await self.sound_konfigurieren()

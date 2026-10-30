@@ -82,6 +82,7 @@ class Mischer(threading.Thread):
         self.musik_fade = 0.0
         self.musik_stop_anfrage = False
         self.duck_ist = 1.0
+        self.musik_vol_ist = 0.6        # geglättete Musik-Lautstärke: Dämpfung (Totenstille, Spieluhr) blendet weich
         self.latenz_ms = PERIODEN * 10.0
         self._verz: collections.deque[bytes] = collections.deque()
         # Status
@@ -119,6 +120,10 @@ class Mischer(threading.Thread):
     def klang_start(self, name: str, klang: np.ndarray, vol: int, licht: dict | None) -> None:
         """Einmaliger Klang (KI-Ansage), schon dekodiert: mono float32, 44,1 kHz."""
         self.befehle.put(("klang", (name, klang, vol, licht)))
+
+    def klang_stop(self, name: str) -> None:
+        """Einmalige Klänge dieses Namens beenden (z. B. „sag“: die KI-Ansage, wenn geklingelt wird)."""
+        self.befehle.put(("klang_stop", name))
 
     def fx_stop_alle(self) -> None:
         self.befehle.put(("fx_stop", None))
@@ -191,6 +196,8 @@ class Mischer(threading.Thread):
                 self.effekte_gespielt += 1
             elif art == "fx_stop":
                 self.stimmen.clear()
+            elif art == "klang_stop":
+                self.stimmen = [s for s in self.stimmen if s.fid != arg]
 
     def _licht(self, daten: bytes) -> None:
         if self.licht is not None and self.licht.aktiv:
@@ -270,6 +277,9 @@ class Mischer(threading.Thread):
             fx *= c["fx_vol"] / 100
             fx_spitze = float(np.abs(fx).max())
 
+        # --- Musik-Lautstärke weich nachführen (~1 s), statt bei jeder Änderung zu springen ---
+        self.musik_vol_ist += (c["musik_vol"] / 100 - self.musik_vol_ist) * 0.04
+
         # --- Ducking ---
         duck_ziel = 1.0 - c["duck"] / 100 if self.stimmen else 1.0
         self.duck_ist += (duck_ziel - self.duck_ist) * (0.30 if duck_ziel < self.duck_ist else 0.015)
@@ -277,7 +287,7 @@ class Mischer(threading.Thread):
         # --- Mischen ---
         master = c["master"] / 100
         if musik is not None and (alt > 0 or self.musik_fade > 0):
-            g = c["musik_vol"] / 100 * self.duck_ist
+            g = self.musik_vol_ist * self.duck_ist
             if alt == self.musik_fade:
                 m = musik * (g * alt)
             else:

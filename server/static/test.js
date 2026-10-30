@@ -280,6 +280,9 @@ class PcTest {
         for (const s of this.stimmen) try { s.quelle.stop(); } catch { /* schon zu Ende */ }
         this.stimmen = [];
         break;
+      case "sag_stop":           // geklingelt: die laufende KI-Ansage endet
+        for (const s of this.stimmen.filter((x) => x.art === "sag")) try { s.quelle.stop(); } catch { /* zu Ende */ }
+        break;
       case "fx_sync":
         // Der Browser lädt Effekte erst beim Abspielen (Vorhör-MP3) – nichts abzugleichen
         this.senden("sound", { t: "fx_sync_fertig", geladen: 0, geloescht: 0, fehler: 0, fx_frei_kb: 1e7 });
@@ -301,7 +304,8 @@ class PcTest {
     this.fxGain.gain.setTargetAtTime(c.fx_vol / 100, t, 0.05);
     const duck = this.stimmen.length ? 1 - c.duck / 100 : 1;
     // wie am Pi: schnell runter, langsam wieder hoch
-    this.musikGain.gain.setTargetAtTime((c.musik_vol / 100) * duck, t, duck < 1 ? 0.03 : 0.6);
+    // wie am Pi: Ducking schnell runter, langsam hoch; Musik-Dämpfung (Totenstille, Spieluhr) weich (~1 s)
+    this.musikGain.gain.setTargetAtTime((c.musik_vol / 100) * duck, t, duck < 1 && c.musik_vol > 0 ? 0.03 : 0.3);
   }
 
   async laden(url) {

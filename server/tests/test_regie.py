@@ -207,7 +207,7 @@ def test_feste_regeln_schreck_und_musik(z):
     z.regie.belegt_bis = 0
     z._regie_wahl = "musik_stille"
     asyncio.run(z.regie.entscheiden("Pause"))
-    asyncio.run(z.musik_normal())
+    asyncio.run(z.musik_normal(sofort=True))
     assert "musik_stille" not in z.regie.optionen()           # einmal pro Besuch
     z.besuch._neu()
     assert "musik_stille" in z.regie.optionen()

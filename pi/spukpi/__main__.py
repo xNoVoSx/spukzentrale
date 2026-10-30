@@ -106,6 +106,8 @@ class Dienst:
             asyncio.create_task(self._sagen(pfad, int(m.get("vol", 100) or 0), licht))
         elif t == "fx_stop":
             self.mischer.fx_stop_alle()
+        elif t == "sag_stop":
+            self.mischer.klang_stop("sag")
         elif t == "fx_sync":
             if self.effekte.sync_laeuft:
                 return

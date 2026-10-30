@@ -15,6 +15,10 @@ from typing import TYPE_CHECKING
 from . import abstimmung
 from .modelle import Effekt, Regel
 
+# laut/schreckhaft: kommen ohne Besucher nicht per Zufall (Ereignisse.schreck_nur_bei_besuch)
+NUR_BEI_BESUCH = {"schrei", "kettensaege", "zombie", "klopfen", "spieluhr", "schreck", "strobo-salve", "werwolf",
+                  "herzschlag-licht", "donner-aus-dem-dunkel"}
+
 if TYPE_CHECKING:
     from .zentrale import Zentrale
 
@@ -63,7 +67,8 @@ class Generator:
                 continue
             if jetzt < self.naechstes[r.id]:
                 continue
-            if z.zustand.gruselstufe < r.gruselstufe_min:
+            if z.zustand.gruselstufe < r.gruselstufe_min or (
+                    z.ereignisse.schreck_nur_bei_besuch and r.ziel in NUR_BEI_BESUCH):
                 self.naechstes[r.id] = jetzt + self._abstand(r)
                 continue
             beschaeftigt = ((z.spieler and z.spieler.laufend) or jetzt - self.letztes < z.ereignisse.min_abstand_s

@@ -258,7 +258,9 @@ class Regel(BaseModel):
 
 
 class Ereignisse(BaseModel):
-    min_abstand_s: int = Field(15, ge=0, le=600)
+    min_abstand_s: int = Field(45, ge=0, le=600)
+    # ohne Besucher nur Atmosphäre – Schrecks, Szenen mit Schrei usw. nur, wenn jemand da ist (Regisseur/Klingel)
+    schreck_nur_bei_besuch: bool = True
     regeln: list[Regel] = Field(default_factory=list)
     vorgaben_version: int = 0
 

@@ -70,7 +70,7 @@ class SzenenSpieler:
 
     async def _ablauf(self, s: Szene) -> None:
         z = self.z
-        musik = False
+        musik: float | None = None              # Ende der Musik-Dämpfung dieser Szene
         ereignisse, ende = self._zeitleiste(s)
         start = time.monotonic()
         try:
@@ -83,7 +83,8 @@ class SzenenSpieler:
                         await z.overlay_setzen(None)
                     else:
                         await self._schritt(sch)
-                        musik = musik or sch.typ == "musik"
+                        if sch.typ == "musik":
+                            musik = z.musik_daempfung[1] if z.musik_daempfung else None
                 except Exception:
                     log.exception("Szene %s: Schritt fehlgeschlagen", s.id)
             rest = start + ende / 1000 - time.monotonic()
@@ -92,8 +93,8 @@ class SzenenSpieler:
         finally:
             if z.overlay is not None:
                 await z.overlay_setzen(None)
-            if musik:
-                await z.musik_normal()    # auch wenn die Szene abgebrochen wurde
+            if musik is not None:
+                await z.musik_normal(eigenes_ende=musik)    # auch wenn die Szene abgebrochen wurde
             self.laufend = None
             z._zustand_geaendert()
 
