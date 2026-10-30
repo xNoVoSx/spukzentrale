@@ -16,6 +16,7 @@ LICHT_JE_KATEGORIE: dict[str, LichtAktion | None] = {
     "kette": LichtAktion(name="flackern", dauer_ms=0, staerke=60),
     "kettensaege": LichtAktion(name="flackern", dauer_ms=0, staerke=100),
     "stimme": LichtAktion(name="env_puls", dauer_ms=0, staerke=60),
+    "reaktion": LichtAktion(name="flackern", dauer_ms=900, staerke=80),
     "wind": None,
     "sonstiges": None,
     "system": None,

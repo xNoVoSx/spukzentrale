@@ -27,6 +27,15 @@ def test_satz_bereinigen():
     assert satz_bereinigen("...Komm näher… ich warte.") == "Komm näher… ich warte."
 
 
+def test_satz_aus_stream():
+    from app.ki import antwort_lesen, satz_aus_teil
+    assert satz_aus_teil('{"mensch": true, "satz": "Komm nä') is None
+    assert satz_aus_teil('{"mensch": true, "satz": "Komm n\\u00e4her... \\"du\\"", "beschr') == 'Komm näher... du'
+    assert satz_aus_teil('{"mensch": false, "satz": "", "beschreibung') == ""
+    assert antwort_lesen('{"mensch": true, "satz": "Hallo du.", "beschreibung": "Ein Kind."}') == ("Ein Kind.", "Hallo du.")
+    assert antwort_lesen("-") == ("", "")
+
+
 def test_wav_dauer():
     assert wav_dauer_ms(_wav(1.5)) == 1500
     assert wav_dauer_ms(b"kaputt") == 3000
@@ -40,7 +49,7 @@ def client(monkeypatch):
         aufrufe.append(("bild", kamera))
         return b"jpeg"
 
-    async def satz(self, c, bild, lage=""):
+    async def satz(self, c, bild, lage="", bei_satz=None):
         aufrufe.append(("satz", lage))
         if self.z.einst.ki.zusatz == "leer":
             return "Leerer Weg mit Fahrradanhänger.", ""

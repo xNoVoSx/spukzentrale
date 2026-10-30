@@ -22,6 +22,7 @@ KATEGORIEN = {
     "kette": "Kette",
     "kettensaege": "Kettensäge",
     "stimme": "Stimme",
+    "reaktion": "KI-Reaktion",
     "sonstiges": "Sonstiges",
 }
 
@@ -36,7 +37,7 @@ AktionName = Literal[
     "keine", "blitz", "env_blitz", "schreck", "blackout", "welle", "alle_an", "puls", "test", "flackern", "env_puls",
 ]
 Kategorie = Literal[
-    "donner", "schrei", "lachen", "herz", "wind", "kette", "kettensaege", "stimme", "sonstiges", "system",
+    "donner", "schrei", "lachen", "herz", "wind", "kette", "kettensaege", "stimme", "reaktion", "sonstiges", "system",
 ]
 
 
@@ -344,6 +345,7 @@ class KiEinst(BaseModel):
     zeitlimit_s: float = Field(10.0, ge=2, le=60)
     bildbreite: int = Field(896, ge=256, le=2048)
     ersatz_kategorie: str = "stimme"          # leer = bei Fehlern nichts abspielen
+    reaktion_kategorie: str = "reaktion"      # sofort beim Auslösen (kurzes Flüstern), leer = aus
 
 
 class Mqtt(BaseModel):

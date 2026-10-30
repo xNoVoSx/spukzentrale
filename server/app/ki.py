@@ -18,6 +18,7 @@ import logging
 import re
 import secrets
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import httpx
@@ -37,7 +38,7 @@ STUFEN = {
 
 SYSTEM = (
     "Du bist die Stimme eines Spukhauses an Halloween. Eine Kamera zeigt dir, wer gerade vor dem Haus steht. "
-    "Sprich die Person oder Gruppe mit EINEM kurzen Satz auf Deutsch direkt an (höchstens 16 Wörter). "
+    "Sprich die Person oder Gruppe mit EINEM kurzen Satz auf Deutsch direkt an (höchstens 10 Wörter). "
     "Beziehe dich auf etwas deutlich Sichtbares: Kostüm, Verkleidung, Maske, Farbe, Gegenstand in der Hand, "
     "Süßigkeitentüte oder die Anzahl der Personen. Klinge wie ein Geist, der Besucher anlockt oder erschreckt. "
     "Regeln: kinderfreundlich, keine Beleidigungen, nichts über Körper, Gewicht, Hautfarbe, Alter oder Geschlecht, "
@@ -45,15 +46,15 @@ SYSTEM = (
     "keine Sternchen. Natürliche gesprochene Sprache, gern mit einer kurzen Pause (...). "
     "Sprich nur, wenn mindestens ein Mensch deutlich zu sehen ist – Fahrzeuge, Tiere, Gegenstände oder Deko "
     "allein zählen nicht.\n"
-    "Antworte als JSON: {\"beschreibung\": sachliche Beschreibung in höchstens 25 Wörtern, was du siehst (Anzahl Personen, Kostüme bzw. "
-    "Kleidung, Gegenstände, wo im Bild sie stehen – nur Äußeres der Verkleidung, keine Körpermerkmale), "
-    "\"mensch\": true/false, \"satz\": der gesprochene Satz, leer wenn kein Mensch zu sehen ist}\n"
+    "Antworte als JSON: {\"mensch\": true/false, \"satz\": der gesprochene Satz, leer wenn kein Mensch zu sehen ist, "
+    "\"beschreibung\": sachliche Beschreibung in höchstens 25 Wörtern, was du siehst (Anzahl Personen, Kostüme bzw. "
+    "Kleidung, Gegenstände, wo im Bild sie stehen – nur Äußeres der Verkleidung, keine Körpermerkmale)}\n"
     "Beispiele für den Stil:\n"
-    "Hey, kleines Skelett! Komm her... ich hab eine Überraschung für dich.\n"
-    "Ihr drei Hexen da... eure Besen gehören jetzt mir.\n"
-    "Na, du mit der Kürbistüte... teilst du mit einem hungrigen Geist?\n"
-    "Schöne Vampirzähne... aber meine sind spitzer.\n"
-    "Du in der roten Jacke... ich habe schon so lange auf dich gewartet."
+    "Hey, kleines Skelett! Komm her... ich hab eine Überraschung.\n"
+    "Ihr drei Hexen... eure Besen gehören jetzt mir.\n"
+    "Du mit der Kürbistüte... teilst du mit mir?\n"
+    "Schöne Vampirzähne... meine sind spitzer.\n"
+    "Du in der roten Jacke... ich hab auf dich gewartet."
 )
 
 LETZTE = 6          # so viele Sätze merkt sie sich, um sich nicht zu wiederholen
@@ -74,15 +75,32 @@ def satz_bereinigen(text: str) -> str:
     return t[:200]
 
 
+# Reihenfolge zählt: der Satz kommt vor der Beschreibung, damit die Stimme schon starten kann (Streaming)
 ANTWORT_SCHEMA = {
     "type": "object",
     "properties": {
-        "beschreibung": {"type": "string"},
         "mensch": {"type": "boolean"},
         "satz": {"type": "string"},
+        "beschreibung": {"type": "string"},
     },
-    "required": ["beschreibung", "mensch", "satz"],
+    "required": ["mensch", "satz", "beschreibung"],
 }
+SATZ_FERTIG = re.compile(r'"mensch"\s*:\s*(true|false)\s*,\s*"satz"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def satz_aus_teil(text: str) -> str | None:
+    """Satz aus einer noch unvollständigen JSON-Antwort, sobald er komplett ist (sonst None)."""
+    m = SATZ_FERTIG.search(text)
+    if not m:
+        return None
+    if m.group(1) == "false":
+        return ""
+    try:
+        satz = json.loads(f'"{m.group(2)}"')
+    except ValueError:
+        return None
+    satz = satz_bereinigen(satz)
+    return "" if satz == "-" else satz
 
 
 def antwort_lesen(text: str) -> tuple[str, str]:
@@ -132,8 +150,12 @@ class KiStimme:
             raise KiFehler(f"Standbild {kamera}: HTTP {r.status_code}")
         return r.content
 
-    async def _satz(self, c: httpx.AsyncClient, bild: bytes, lage: str = "") -> tuple[str, str]:
-        """(Beschreibung, Satz) – Satz leer, wenn kein Mensch zu sehen ist."""
+    async def _satz(self, c: httpx.AsyncClient, bild: bytes, lage: str = "",
+                    bei_satz: Callable[[str], None] | None = None) -> tuple[str, str]:
+        """(Beschreibung, Satz) – Satz leer, wenn kein Mensch zu sehen ist.
+
+        Liest die Antwort als Stream: bei_satz(satz) kommt, sobald der Satz fertig ist – die Beschreibung danach.
+        """
         k = self.z.einst.ki
         hinweis = [STUFEN.get(self.z.zustand.gruselstufe, STUFEN[2])]
         if lage.strip():
@@ -155,13 +177,29 @@ class KiStimme:
             "max_tokens": 200,
             "temperature": 0.9,
             "response_format": {"type": "json_schema", "json_schema": {"name": "antwort", "schema": ANTWORT_SCHEMA}},
+            "stream": True,
         }
         if k.modell:
             anfrage["model"] = k.modell
-        r = await c.post(f"{k.llm_url.rstrip('/')}/v1/chat/completions", json=anfrage)
-        if r.status_code != 200:
-            raise KiFehler(f"Sprachmodell: HTTP {r.status_code}")
-        return antwort_lesen(r.json()["choices"][0]["message"]["content"])
+        text, gemeldet = "", False
+        # llama-server schließt nach einem Stream die Verbindung – nicht wiederverwenden
+        async with c.stream("POST", f"{k.llm_url.rstrip('/')}/v1/chat/completions", json=anfrage,
+                            headers={"Connection": "close"}) as r:
+            if r.status_code != 200:
+                raise KiFehler(f"Sprachmodell: HTTP {r.status_code}")
+            async for zeile in r.aiter_lines():
+                if not zeile.startswith("data: ") or zeile == "data: [DONE]":
+                    continue
+                try:
+                    text += json.loads(zeile[6:])["choices"][0]["delta"].get("content") or ""
+                except (ValueError, KeyError, IndexError):
+                    continue
+                if bei_satz and not gemeldet:
+                    satz = satz_aus_teil(text)
+                    if satz is not None:
+                        gemeldet = True
+                        bei_satz(satz)
+        return antwort_lesen(text)
 
     async def _sprechen(self, c: httpx.AsyncClient, text: str) -> bytes:
         k = self.z.einst.ki
@@ -171,7 +209,8 @@ class KiStimme:
         return r.content
 
     # ------------------------------------------------------------------
-    async def ansprechen(self, kamera: str, vol: int = 100, quelle: str = "KI-Stimme", lage: str = "") -> str:
+    async def ansprechen(self, kamera: str, vol: int = 100, quelle: str = "KI-Stimme", lage: str = "",
+                         reaktion: bool = True) -> str:
         """Kamera ansehen, Satz sprechen lassen.
 
         Ergebnis: "gesagt", "niemand" (kein Mensch im Bild), "fehler" (KI weg, zu langsam …) oder "beschaeftigt".
@@ -187,6 +226,9 @@ class KiStimme:
                          "ergebnis": "fehler", "grund": ""}
         zeiten = eintrag["zeiten"]
         self._melden({"t": "ki", "laeuft": True, "quelle": quelle})
+        if k.reaktion_kategorie and reaktion:
+            # sofort ein kurzes Flüstern + Flackern: der Geist hat die Leute bemerkt, der Satz kommt gleich
+            await self.z.fx_kategorie(k.reaktion_kategorie, vol)
         try:
             if not (k.llm_url and k.tts_url):
                 raise KiFehler("Adressen für Sprachmodell/Sprach-Dienst fehlen")
@@ -195,15 +237,25 @@ class KiStimme:
                     bild = await self._standbild(c, kamera)
                     zeiten["bild"] = round(time.monotonic() - t0, 1)
                     self.letztes_bild, self.letztes_bild_zeit = bild, eintrag["zeit"]
-                    eintrag["beschreibung"], satz = await self._satz(c, bild, lage)
-                    zeiten["text"] = round(time.monotonic() - t0, 1)
-                    if len(satz) < 4:
-                        eintrag["ergebnis"] = "niemand"
-                        self.z.protokollieren(f"{quelle}: kein Mensch zu erkennen", "info")
-                        return "niemand"
-                    eintrag["satz"] = satz
-                    wav = await self._sprechen(c, satz)
-                    zeiten["stimme"] = round(time.monotonic() - t0, 1)
+                    # Satz kommt per Stream vor der Beschreibung: Stimme startet, während das Modell weiterschreibt
+                    satz_da: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+                    denken = asyncio.create_task(self._satz(
+                        c, bild, lage, lambda s: satz_da.done() or satz_da.set_result(s)))
+                    try:
+                        await asyncio.wait({satz_da, denken}, return_when=asyncio.FIRST_COMPLETED)
+                        satz = satz_da.result() if satz_da.done() else denken.result()[1]
+                        zeiten["text"] = round(time.monotonic() - t0, 1)
+                        if len(satz) < 4:
+                            eintrag["beschreibung"] = (await denken)[0]
+                            eintrag["ergebnis"] = "niemand"
+                            self.z.protokollieren(f"{quelle}: kein Mensch zu erkennen", "info")
+                            return "niemand"
+                        eintrag["satz"] = satz
+                        wav = await self._sprechen(c, satz)
+                        zeiten["stimme"] = round(time.monotonic() - t0, 1)
+                        eintrag["beschreibung"] = (await denken)[0]
+                    finally:
+                        denken.cancel()
             self.letzte.append(satz)
             await self._abspielen(wav, vol)
             eintrag["ergebnis"] = "gesagt"

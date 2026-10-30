@@ -1603,6 +1603,7 @@ bereich("ki-einstellungen", "ki", ["daten"], () => {
         ${feld("zeitlimit_s", "Zeitlimit (s)", "number", ki.zeitlimit_s, 'min="2" max="60" step="0.5"')}
         ${auswahl("ersatz_kategorie", "Wenn die KI nicht kann", [["", "nichts abspielen"], ...kategorien()], ki.ersatz_kategorie)}
       </div>
+      ${auswahl("reaktion_kategorie", "Sofort-Reaktion (kurzes Flüstern beim Erkennen)", [["", "aus"], ...kategorien()], ki.reaktion_kategorie)}
       <p class="hinweis">Die Gruselstufe der Show bestimmt, wie schaurig die Sätze werden. Im Protokoll steht jeder Satz mit den Zeiten.</p>`)
   ].join("");
 });
