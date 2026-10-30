@@ -193,7 +193,7 @@ def test_claude_entscheidet_und_gemma_springt_ein(z, monkeypatch):
 
 def test_feste_regeln_schreck_und_musik(z):
     z.zustand.ambiente_an = True
-    z.besuch.zustand = "tuer"
+    z.besuch.zustand = "gelockt"
     z.medien.fx_der_kategorie = lambda k: [Effekt(id=k, name=k, kategorie=k, dauer_ms=3000)]
     z.medien.fx = lambda fid: Effekt(id=fid, name=fid, kategorie=fid, dauer_ms=3000)
     z.ereignisse.regeln.append(Regel(id="s", typ="kategorie", ziel="schrei"))
@@ -212,3 +212,16 @@ def test_feste_regeln_schreck_und_musik(z):
     z.besuch._neu()
     assert "musik_stille" in z.regie.optionen()
     z.zustand.ambiente_an = False
+
+
+def test_an_der_tuer_erst_spannung_dann_klingel(z):
+    """Vor dem Klingeln an der Tür nichts Heftiges (der Schreck gehört der Klingel) – außer sie zögern lange."""
+    z.medien.fx_der_kategorie = lambda k: [Effekt(id=k, name=k, kategorie=k, dauer_ms=3000)]
+    z.medien.fx = lambda fid: Effekt(id=fid, name=fid, kategorie=fid, dauer_ms=3000)
+    z.ereignisse.regeln.append(Regel(id="s", typ="kategorie", ziel="schrei"))
+    z.zustand.gruselstufe = 3
+    z.besuch.zustand, z.besuch.seit = "tuer", time.time()
+    aus = z.regie.optionen()
+    assert "fx_schrei" not in aus and "fx_donner" in aus and "licht_blackout" not in aus
+    z.besuch.seit = time.time() - 25
+    assert "fx_schrei" in z.regie.optionen()

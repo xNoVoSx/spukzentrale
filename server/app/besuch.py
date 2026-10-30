@@ -43,6 +43,8 @@ TUER = "Die Leute stehen direkt vor der Haustür – fordere sie auf, die Klinge
 ABSCHIED = ("Die Leute gehen gerade wieder weg. Verabschiede dich gruselig-freundlich (zum Beispiel: kommt bald "
             "wieder). Locke sie auf KEINEN Fall zurück und fordere sie zu nichts auf.")
 
+ABSCHIED_PRUEFEN_S = 10       # genug gelockt, sie drehen um: so schnell darf der Abschied kommen
+
 TEXTE = {"leer": "niemand da", "gelockt": "auf dem Weg angesprochen", "tuer": "an der Haustür",
          "geklingelt": "hat geklingelt", "geht": "geht wieder", "nachlauf": "vorbei (Nachlauf)"}
 
@@ -232,7 +234,7 @@ class Besuch:
         jetzt = time.monotonic()
         if not k.abschied or self.abschied_gesagt or not self._darf_sprechen():
             return
-        if jetzt - max(self.letzte_ansprache, self.letzte_pruefung) < k.neu_pruefen_s:
+        if jetzt - max(self.letzte_ansprache, self.letzte_pruefung) < ABSCHIED_PRUEFEN_S:
             return
         self.letzte_pruefung = jetzt
         ergebnis = await self._sprechen(a, quelle, ABSCHIED, reaktion=False, still_bei=("kommt", "steht", "unklar"))

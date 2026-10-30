@@ -881,6 +881,10 @@ bereich("einst-licht", "einstellungen", ["daten"], () => {
       ${feld("strobo_max_hz", "Strobo max. (Hz)", "number", l.strobo_max_hz, 'step="0.5" min="0.5" max="15"')}
     </div>
     <p class="hinweis warnung">⚠️ Stroboskop über 3 Hz kann bei Menschen mit Fotosensibilität Anfälle auslösen.</p>
+    <h3>Grundlicht und Musik</h3>
+    ${feld("grund_max", "Grundlicht höchstens (%)", "number", l.grund_max, 'min="10" max="100"')}
+    <p class="hinweis">Stimmung und Musik-Licht bleiben unter diesem Wert – Blitze, Schreck und Szenen-Licht stechen so immer heller heraus.</p>
+    ${kasten("choreografie", "Licht-Choreografie zur Musik", l.choreografie, "Zonen gehen passend zur Musik aus und an (wechselnde Muster auf dem Takt, ruhige Stellen fast dunkel) – nur wenn die Grundbeleuchtung „Zur Musik“ ist")}
     <h3>Zonen-Test</h3>
     <div class="knopfreihe">
       ${[...Array(l.zonen).keys()].map((i) => `<button type="button" class="klein" data-aktion="zone-test" data-zone="${i}">${i + 1}</button>`).join("")}

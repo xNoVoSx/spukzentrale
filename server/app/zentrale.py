@@ -24,6 +24,7 @@ from .besuch import LOCKEN, TUER, Besuch
 from .ki import KiStimme
 from .regie import Regie
 from .simulation import Simulation
+from .choreografie import Choreografie
 from .licht import EspLicht, LichtAusgang
 from .medien import FX_KAPAZITAET_STANDARD_KB, FX_RESERVE_KB, MedienVerwaltung
 from . import fxanalyse, musikanalyse
@@ -60,6 +61,8 @@ class Zentrale:
         self.ui: set[WebSocket] = set()
         self.protokoll: collections.deque[dict] = collections.deque(maxlen=60)
         self.overlay: Stimmung | None = None     # kurzzeitige Stimmung aus einer Szene
+        self.choreo: Stimmung | None = None      # Zonen-Muster der Licht-Choreografie zur Musik (choreografie.py)
+        self.spieluhr_bis = 0.0                  # monotonic: so lange spielt eine Spieluhr (eigene Musik)
         self.ruhezeit_aktiv = False
         self.show_fenster: dict[str, Any] = {}    # vom Zeitplan: nächster Start/Ende
         self.ha_status = "aus"
@@ -75,6 +78,7 @@ class Zentrale:
         self.besuch = Besuch(self)
         self.regie = Regie(self)
         self.simulation = Simulation(self)
+        self.choreografie = Choreografie(self)
         self._ki_tasks: set[asyncio.Task] = set()
         # Hintergrundmusik kurz gedämpft (Szene „Totenstille“, Regisseur): ("stille"|"leise", Ende monotonic)
         self.musik_daempfung: tuple[str, float] | None = None
@@ -106,6 +110,12 @@ class Zentrale:
             for version, szene in vorgaben.SZENEN:
                 if version > self.szenen.vorgaben_version and szene.id not in vorhanden:
                     self.szenen.liste.append(szene.model_copy(deep=True))
+            # eingebaute Szenen, die eine neuere Version verbessert hat, ersetzen (eigene Szenen bleiben unberührt)
+            neu = {s.id: s for _, s in vorgaben.SZENEN}
+            for version, ids in vorgaben.SZENEN_ERSETZT.items():
+                if version > self.szenen.vorgaben_version:
+                    self.szenen.liste = [neu[s.id].model_copy(deep=True) if s.eingebaut and s.id in ids else s
+                                         for s in self.szenen.liste]
             self.szenen.vorgaben_version = vorgaben.SZENEN_VERSION
             speichere(pfade.CONFIG / "szenen.json", self.szenen)
         if self.ereignisse.regeln and self.ereignisse.vorgaben_version == 0:
@@ -141,11 +151,20 @@ class Zentrale:
     # Abgeleitete Werte
     # ------------------------------------------------------------------
     def licht_effektiv(self) -> LichtZustand:
+        """Ebenen: Grundlicht (Stimmung) -> Choreografie zur Musik -> Szene/Effekt-Stimmung (overlay).
+        Grundlicht und Choreografie bleiben unter grund_max, damit Effekte immer heller herausstechen."""
         z = self.zustand.licht.model_copy(deep=True)
+        n = len(z.zonen)
         if self.overlay:
-            n = len(z.zonen)
             z.zonen = [self.overlay.zonen[i % len(self.overlay.zonen)].model_copy() for i in range(n)]
             z.musik_reaktiv = self.overlay.musik_reaktiv
+            return z
+        if self.choreo:
+            z.zonen = [self.choreo.zonen[i % len(self.choreo.zonen)].model_copy() for i in range(n)]
+        f = self.einst.licht.grund_max / 100
+        for zone in z.zonen:
+            zone.staerke, zone.basis = round(zone.staerke * f), round(zone.basis * f)
+        z.musik_reaktiv = round(z.musik_reaktiv * f)
         return z
 
     def ton_effektiv(self) -> TonEinst:
@@ -187,6 +206,7 @@ class Zentrale:
             "zustand": self.zustand.model_dump(),
             "licht_effektiv": self.licht_effektiv().model_dump(),
             "overlay": self.overlay.name if self.overlay else None,
+            "choreo": self.choreo.name if self.choreo else None,
             "szene": spieler.laufend if spieler else None,
             "ambiente_jetzt": self.ambiente.jetzt,
             "ambiente_pos": self._ambiente_pos(),
@@ -364,7 +384,7 @@ class Zentrale:
     # Licht
     # ------------------------------------------------------------------
     async def _licht_senden(self) -> None:
-        await self.licht.zustand(self.licht_effektiv(), temp=self.overlay is not None)
+        await self.licht.zustand(self.licht_effektiv(), temp=self.overlay is not None or self.choreo is not None)
         self._zustand_geaendert()
 
     async def licht_aendern(self, *, an: bool | None = None, hell: int | None = None,
@@ -438,6 +458,28 @@ class Zentrale:
 
     async def fx_spielen(self, f: Effekt, vol: int = 100, licht: LichtAktion | None | str = "auto",
                          quelle: str = "") -> None:
+        if f.kategorie == "spieluhr":
+            await self._spieluhr(f)
+        await self._fx_spielen(f, vol, licht, quelle)
+
+    async def _spieluhr(self, f: Effekt) -> None:
+        """Spieluhr = eigene Musik: die Hintergrundmusik verstummt, eigenes Licht (ein langsamer Geist, dazu pulsiert
+        alles mit dem Klang), Zufallsereignisse warten (ereignisse.py)."""
+        dauer = f.hoerbar_ms + 300
+        self.spieluhr_bis = time.monotonic() + dauer / 1000
+        await self.musik_daempfen("stille", dauer)
+        st = next((s for s in self.stimmungen.liste if s.id == "spieluhr"), None)
+        if st and not (self.spieler and self.spieler.laufend):
+            await self.overlay_setzen(st)
+
+            async def ende() -> None:
+                await asyncio.sleep(dauer / 1000)
+                if self.overlay is st:
+                    await self.overlay_setzen(None)
+            self._hintergrund(ende())
+
+    async def _fx_spielen(self, f: Effekt, vol: int = 100, licht: LichtAktion | None | str = "auto",
+                          quelle: str = "") -> None:
         """Effekt-Sound mit passendem Licht.
 
         Hängt das Licht per Kabel am Sound-Gerät (Licht-ESP per USB am Pi bzw. per UART am Sound-ESP), geht die

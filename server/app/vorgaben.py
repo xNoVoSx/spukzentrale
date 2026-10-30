@@ -22,7 +22,7 @@ LICHT_JE_KATEGORIE: dict[str, LichtAktion | None] = {
     "schritte": LichtAktion(name="welle", dauer_ms=1500, staerke=70),
     "kraehe": LichtAktion(name="puls", dauer_ms=600, staerke=50),
     "glocke": LichtAktion(name="env_puls", dauer_ms=0, staerke=90),
-    "spieluhr": None,
+    "spieluhr": LichtAktion(name="env_puls", dauer_ms=0, staerke=60),   # eigene Musik: Licht folgt der Spieluhr
     "zombie": LichtAktion(name="flackern", dauer_ms=0, staerke=70),
     "fluestern": LichtAktion(name="env_puls", dauer_ms=0, staerke=40),
     "klopfen": LichtAktion(name="env_blitz", dauer_ms=0, staerke=80),
@@ -38,7 +38,7 @@ def _alle(e: str, tempo=50, staerke=80, basis=5) -> list[Zone]:
 
 
 # (Version, in der die Stimmung dazukam, Stimmung) – siehe Zentrale._vorgaben_ergaenzen
-STIMMUNGEN_VERSION = 2
+STIMMUNGEN_VERSION = 3
 STIMMUNGEN = [(1, s) for s in [
     Stimmung(id="gruselig", name="Gruselig ruhig", eingebaut=True, zonen=[
         Zone(e="flackern", tempo=40, staerke=55, basis=10),
@@ -74,6 +74,9 @@ STIMMUNGEN = [(1, s) for s in [
     Stimmung(id="herz-langsam", name="Herzschlag langsam", eingebaut=True, zonen=_alle("herzschlag", 25, 70, 0)),
     Stimmung(id="herz-schnell", name="Herzschlag schnell", eingebaut=True, zonen=_alle("herzschlag", 85, 90, 0)),
     Stimmung(id="strobo", name="Stroboskop", eingebaut=True, zonen=_alle("strobo", 60, 100, 0)),
+]] + [(3, s) for s in [
+    # Spieluhr = eigene Musik: ein langsamer Geist wandert, sonst dunkel (dazu pulsiert alles mit dem Klang)
+    Stimmung(id="spieluhr", name="Spieluhr", eingebaut=True, zonen=_alle("wandern", 12, 70, 0)),
 ]]
 
 
@@ -90,7 +93,10 @@ def _ak(t, name, dauer, staerke=100, param=0) -> Schritt:
 
 
 # (Version, in der die Szene dazukam, Szene) – siehe Zentrale._vorgaben_ergaenzen
-SZENEN_VERSION = 3
+SZENEN_VERSION = 4
+# eingebaute Szenen, die eine neuere Version ersetzt (Version -> IDs): Dunkelheit endet jetzt immer mit etwas Gruseligem
+SZENEN_ERSETZT = {4: {"stromausfall", "totenstille", "geist-zieht-vorbei", "pingpong-geist", "wetterleuchten",
+                      "kaputte-roehre", "herzschlag-licht", "haus-atmet", "strobo-salve"}}
 SZENEN = [(1, s) for s in [
     Szene(id="gewitterfront", name="Gewitterfront", gruselstufe=1, eingebaut=True, schritte=[
         Schritt(t_ms=0, typ="stimmung", stimmung_id="gewitternacht", dauer_ms=36000),
@@ -128,25 +134,31 @@ SZENEN = [(1, s) for s in [
         _fx(300, "stimme"),
     ])),
 ] + [(3, s) for s in [
-    # Licht ohne Ton (1.8) – kurz genug für den Regisseur
+    # Licht (1.8) – kurz genug für den Regisseur. Seit 1.12 endet jede Dunkelheit mit etwas Gruseligem (Novos: sonst
+    # denkt man, es ist kaputt), siehe SZENEN_ERSETZT
     Szene(id="stromausfall", name="Stromausfall", gruselstufe=1, eingebaut=True, schritte=[
-        _st(0, "unruhig", 2500), _st(2500, "schwarz", 6000), _ak(8500, "blitz", 300)]),
+        _st(0, "unruhig", 2500), _st(2500, "schwarz", 6000), _ak(8500, "blitz", 300),
+        _fx(8500, "lachen", licht="keine")]),
     Szene(id="totenstille", name="Totenstille", gruselstufe=1, eingebaut=True, schritte=[
-        Schritt(t_ms=0, typ="musik", musik="stille", dauer_ms=7000), _st(0, "schwarz", 7000)]),
+        Schritt(t_ms=0, typ="musik", musik="stille", dauer_ms=7500), _st(0, "schwarz", 7500),
+        _fx(5000, "fluestern")]),
     Szene(id="geist-zieht-vorbei", name="Geist zieht vorbei", gruselstufe=1, eingebaut=True, schritte=[
-        _st(0, "ein-geist", 9000)]),
+        _st(0, "ein-geist", 9000), _fx(2500, "fluestern", vol=80, licht="keine")]),
     Szene(id="pingpong-geist", name="Ping-Pong-Geist", gruselstufe=2, eingebaut=True, schritte=[
-        _st(0, "pingpong-langsam", 4000), _st(4000, "pingpong-schnell", 3000), _st(7000, "schwarz", 1500)]),
+        _st(0, "pingpong-langsam", 4000), _st(4000, "pingpong-schnell", 3000), _st(7000, "schwarz", 2000),
+        _fx(7800, "lachen")]),
     Szene(id="wetterleuchten", name="Wetterleuchten", gruselstufe=1, eingebaut=True, schritte=[
-        _st(0, "wetterleuchten", 10000)]),
+        _st(0, "wetterleuchten", 10000), _fx(5500, "donner", vol=50, licht="keine")]),
     Szene(id="kaputte-roehre", name="Kaputte Röhre", gruselstufe=1, eingebaut=True, schritte=[
-        _st(0, "kaputte-roehre", 8000)]),
+        _st(0, "kaputte-roehre", 8000), _fx(6500, "tuer")]),
     Szene(id="herzschlag-licht", name="Herzschlag-Licht", gruselstufe=2, eingebaut=True, schritte=[
-        _st(0, "herz-langsam", 5000), _st(5000, "herz-schnell", 4000), _st(9000, "schwarz", 1500)]),
+        _st(0, "herz-langsam", 5000), _st(5000, "herz-schnell", 4000), _st(9000, "schwarz", 1500),
+        _fx(9800, "schrei")]),
     Szene(id="haus-atmet", name="Das Haus atmet", gruselstufe=1, eingebaut=True, schritte=[
-        Schritt(t_ms=0, typ="musik", musik="leise", dauer_ms=12000), _st(0, "dunkel", 12000)]),
+        Schritt(t_ms=0, typ="musik", musik="leise", dauer_ms=12000), _st(0, "dunkel", 12000),
+        _fx(10500, "klopfen")]),
     Szene(id="strobo-salve", name="Strobo-Salve", gruselstufe=3, eingebaut=True, schritte=[
-        _ak(0, "blackout", 800), _st(800, "strobo", 1200), _st(2000, "schwarz", 1500)]),
+        _ak(0, "blackout", 800), _st(800, "strobo", 1200), _st(2000, "schwarz", 1500), _fx(2600, "schrei")]),
     # mit Ton
     Szene(id="donner-aus-dem-dunkel", name="Donner aus dem Dunkel", gruselstufe=1, eingebaut=True, schritte=[
         _st(0, "schwarz", 1500), _fx(1200, "donner")]),

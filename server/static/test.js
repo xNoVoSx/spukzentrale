@@ -514,7 +514,8 @@ bereich("test-jetzt", "test", ["test", "zustand", "protokoll", "ki"], () => `
   <div class="karte">
     <h2>Was gerade passiert</h2>
     <ul class="protokoll" id="test-klaenge"></ul>
-    <p class="hinweis">Musik: ${esc(S.ambiente_jetzt || "–")}${S.szene ? ` · Szene: ${esc(S.szene.name)}` : ""}</p>
+    <p class="hinweis">Musik: ${esc(S.ambiente_jetzt || "–")}${S.szene ? ` · Szene: ${esc(S.szene.name)}` : ""}
+      · Licht: ${esc(S.overlay || (S.choreo ? "Choreografie – " + S.choreo : "Grundlicht"))}</p>
     ${kiStatus.regie ? `<h3>🎬 Regisseur ${S.zustand.regie_an ? "" : "(aus)"}</h3>
     <ul class="protokoll">
       ${kiStatus.regie.verlauf.slice(0, 5).map((e) => `<li><time>${zeit(e.zeit)}</time><span><b>${esc(e.name || e.effekt || "–")}</b> · ${esc(e.grund)}</span></li>`).join("") || '<li class="leer">Noch keine Entscheidung.</li>'}

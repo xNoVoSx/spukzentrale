@@ -274,6 +274,9 @@ class LichtEinst(BaseModel):
     zone_max: list[int] = Field(default_factory=lambda: [100] * MAX_ZONEN)
     gamma: float = Field(2.2, ge=1.0, le=3.0)
     strobo_max_hz: float = Field(3.0, ge=0.5, le=15.0)
+    # Grundlicht (Stimmung/Musik) höchstens so hell – Platz nach oben für Effekte (Blitze, Szenen-Licht)
+    grund_max: int = Field(55, ge=10, le=100)
+    choreografie: bool = True    # zur Hintergrundmusik wechselnde Zonen-Muster (choreografie.py)
 
     @field_validator("zonen_namen", "zonen_farben", "zone_max")
     @classmethod

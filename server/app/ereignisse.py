@@ -67,7 +67,8 @@ class Generator:
                 self.naechstes[r.id] = jetzt + self._abstand(r)
                 continue
             beschaeftigt = ((z.spieler and z.spieler.laufend) or jetzt - self.letztes < z.ereignisse.min_abstand_s
-                            or z.besuch.aktiv)       # Besucher werden angesprochen: kein Donner dazwischen
+                            or z.besuch.aktiv        # Besucher werden angesprochen: kein Donner dazwischen
+                            or jetzt < z.spieluhr_bis)  # Spieluhr ist eigene Musik: nichts drüber
             if beschaeftigt:
                 self.naechstes[r.id] = jetzt + random.uniform(5, 20)
                 continue

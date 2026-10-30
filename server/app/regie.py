@@ -46,7 +46,6 @@ LICHT = {
     "licht_blitz": ("blitz", 400, "ein greller Blitz"),
     "licht_flackern": ("flackern", 2500, "das Licht flackert unruhig"),
     "licht_welle": ("welle", 2000, "eine Lichtwelle läuft über die Wand"),
-    "licht_blackout": ("blackout", 2500, "plötzlich ist alles dunkel (2,5 s)"),
     "licht_puls": ("puls", 1500, "das Licht pulsiert einmal auf"),
 }
 MUSIK = {
@@ -62,11 +61,13 @@ SYSTEM = (
     "- Spannung aufbauen statt Dauerbeschallung: erst leise, unheimliche Dinge (Musik verstummt, Flüstern, "
     "Schritte, Herzschlag, flackerndes Licht, ein Geist zieht vorbei), dann ein Schreck (Blackout + Blitz, Schrei, "
     "Werwolf). Stille und Dunkelheit sind deine stärksten Werkzeuge. Nach einem Schreck kurz Ruhe.\n"
-    "- Auf dem Weg zum Haus: neugierig machen und unheimlich locken, nicht verscheuchen – der große Schreck "
-    "kommt erst, wenn sie an der Tür stehen. Beim Weggehen: ein letzter leiser Gruß (Lachen, Flüstern).\n"
-    "- Dosierung nach dem, was die Kamera sieht: kleine Kinder (an der Hand, Kleinkinder) gruselig, aber nicht "
-    "verstören – keine Schreie, keine Kettensäge, kein Stroboskop. Größere Kinder, Jugendliche und Erwachsene "
-    "darfst du richtig erschrecken. Die Gruselstufe der Show ist die Obergrenze.\n"
+    "- Auf dem Weg zum Haus: neugierig machen und unheimlich locken, nicht verscheuchen. An der Tür vor dem "
+    "Klingeln: nur Spannung (Stille, Flüstern, Herzschlag, flackerndes Licht) – den großen Schreck löst die Klingel "
+    "aus, nimm ihn nicht vorweg. Beim Weggehen: ein letzter leiser Gruß (Lachen, Flüstern).\n"
+    "- Wird es dunkel, muss danach etwas Gruseliges passieren – Dunkelheit ohne Folge wirkt wie ein Defekt.\n"
+    "- Publikum: Die Show läuft ab 17–18 Uhr, meist Schulkinder, Jugendliche und Erwachsene – die darfst du richtig "
+    "erschrecken. Siehst du doch Kleinkinder (an der Hand, Kinderwagen): gruselig, aber nicht verstören – keine "
+    "Schreie, keine Kettensäge, kein Stroboskop. Die Gruselstufe der Show ist die Obergrenze.\n"
     "- Abwechslung: nicht zweimal dasselbe hintereinander. Die Geisterstimme spricht selbst – du ergänzt sie.\n"
     "- Die Hintergrundmusik ist Teil der Inszenierung: du kennst ihre Stimmung und was gleich in ihr passiert "
     "(Gesang, ruhige Stelle). Ein Musik-Eingriff (Totenstille, leise, Wechsel) wirkt nur selten – höchstens einmal "
@@ -79,6 +80,7 @@ VERLAUF = 15
 HEFTIG = {"schrei", "kettensaege", "werwolf", "zombie", "klopfen", "szene_schreck", "szene_kettensaege",
           "szene_strobo-salve", "szene_werwolf", "szene_donner-aus-dem-dunkel"}
 RUHE_NACH_SCHRECK_S = 25
+TUER_GEDULD_S = 20             # an der Tür vor dem Klingeln so lange nur Spannung – der Schreck gehört der Klingel
 MUSIK_WARTEN_MAX_S = 4.0       # so lange darf ein Sound auf eine passende Stelle der Musik warten
 SCHEMA_GRUND = {"type": "string"}
 
@@ -147,7 +149,9 @@ class Regie:
                 dauer = z.spieler.dauer_ms(s)
                 if s.gruselstufe <= stufe and 0 < dauer <= z.einst.ki.regie_szene_max_s * 1000 and self._szene_geht(s):
                     aus[f"szene_{s.id}"] = f"Szene „{s.name}“ ({dauer / 1000:.0f} s): {self._szene_text(s)}"
-        if time.monotonic() - self.letzter_schreck < RUHE_NACH_SCHRECK_S:
+        b = z.besuch
+        tuer_geduld = b.zustand == "tuer" and time.time() - b.seit < TUER_GEDULD_S
+        if tuer_geduld or time.monotonic() - self.letzter_schreck < RUHE_NACH_SCHRECK_S:
             for e in [e for e in aus if self._heftig(e)]:
                 del aus[e]
         if z.zustand.ambiente_an and not self.musik_eingriff and not z.musik_daempfung:
@@ -220,7 +224,8 @@ class Regie:
             return
         if jetzt - self.letzte_aktion < k.regie_abstand_s or jetzt - self.ki_ende < 4:
             return
-        ruhe = int(jetzt - max(self.letzte_aktion, self.ki_ende))
+        # seit wann nichts passiert – höchstens seit Beginn dieser Phase des Besuchs
+        ruhe = int(min(jetzt - max(self.letzte_aktion, self.ki_ende), time.time() - b.seit))
         await self.entscheiden(f"Pause – seit {ruhe} Sekunden ist nichts passiert")
 
     # ------------------------------------------------------------------

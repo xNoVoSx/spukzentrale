@@ -82,7 +82,7 @@ def test_regie_bekommt_szenen_und_musik(monkeypatch):
         z.zustand.gruselstufe = 2
         z.zustand.ambiente_an = True
         monkeypatch.setattr(z.medien, "fx_der_kategorie",
-                            lambda k: [Effekt(id="w", name="Wolf", kategorie=k, dauer_ms=4000)] if k == "werwolf" else [])
+                            lambda k: [Effekt(id=k, name=k, kategorie=k, dauer_ms=4000)] if k in ("werwolf", "lachen") else [])
         monkeypatch.setattr(z.medien.daten, "musik", [Musikstueck(id="m1", name="Düster", analyse=MusikAnalyse(stimmung="duester"))])
         aus = z.regie.optionen()
         assert "szene_stromausfall" in aus and "szene_werwolf" in aus and "Stromausfall" in aus["szene_stromausfall"]
