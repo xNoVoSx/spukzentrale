@@ -63,7 +63,9 @@ SYSTEM = (
     "Werwolf). Stille und Dunkelheit sind deine stärksten Werkzeuge. Nach einem Schreck kurz Ruhe.\n"
     "- Auf dem Weg zum Haus: neugierig machen und unheimlich locken, nicht verscheuchen. An der Tür vor dem "
     "Klingeln: nur Spannung (Stille, Flüstern, Herzschlag, flackerndes Licht) – den großen Schreck löst die Klingel "
-    "aus, nimm ihn nicht vorweg. Beim Weggehen: ein letzter leiser Gruß (Lachen, Flüstern).\n"
+    "aus, nimm ihn nicht vorweg. Nach dem Klingeln redet der Hausherr an der Tür mit den Besuchern: überrasche sie "
+    "ab und zu (gern hinter ihrem Rücken), aber nichts Langes oder Dauerlautes, das Gespräch soll nicht untergehen. "
+    "Beim Weggehen: ein letzter leiser Gruß (Lachen, Flüstern).\n"
     "- Wird es dunkel, muss danach etwas Gruseliges passieren – Dunkelheit ohne Folge wirkt wie ein Defekt.\n"
     "- Publikum: Die Show läuft ab 17–18 Uhr, meist Schulkinder, Jugendliche und Erwachsene – die darfst du richtig "
     "erschrecken. Siehst du doch Kleinkinder (an der Hand, Kinderwagen): gruselig, aber nicht verstören – keine "
@@ -80,6 +82,7 @@ VERLAUF = 15
 HEFTIG = {"schrei", "kettensaege", "werwolf", "zombie", "klopfen", "szene_schreck", "szene_kettensaege",
           "szene_strobo-salve", "szene_werwolf", "szene_donner-aus-dem-dunkel"}
 RUHE_NACH_SCHRECK_S = 25
+KLINGEL_RUHE_S = 15            # nach dem Klingeln wirkt erst der Klingel-Schreck, dann darf der Regisseur weitermachen
 TUER_GEDULD_S = 20             # an der Tür vor dem Klingeln so lange nur Spannung – der Schreck gehört der Klingel
 MUSIK_WARTEN_MAX_S = 4.0       # so lange darf ein Sound auf eine passende Stelle der Musik warten
 SCHEMA_GRUND = {"type": "string"}
@@ -153,7 +156,8 @@ class Regie:
                     aus[f"szene_{s.id}"] = f"Szene „{s.name}“ ({dauer / 1000:.0f} s): {self._szene_text(s)}"
         b = z.besuch
         tuer_geduld = b.zustand == "tuer" and time.time() - b.seit < TUER_GEDULD_S
-        if tuer_geduld or time.monotonic() - self.letzter_schreck < RUHE_NACH_SCHRECK_S:
+        # der Klingel-Schreck zählt wie ein eigener Schreck
+        if tuer_geduld or time.monotonic() - max(self.letzter_schreck, b.klingel_zeit) < RUHE_NACH_SCHRECK_S:
             for e in [e for e in aus if self._heftig(e)]:
                 del aus[e]
         if z.zustand.ambiente_an and not self.musik_eingriff and not z.musik_daempfung:
@@ -222,13 +226,22 @@ class Regie:
     async def takt(self, jetzt: float) -> None:
         k = self.z.einst.ki
         b = self.z.besuch
-        if b.zustand not in ("gelockt", "tuer") or not (b.an["fern"] or b.an["nah"]) or not self._darf():
+        if b.zustand not in ("gelockt", "tuer", "geklingelt") or not (b.an["fern"] or b.an["nah"]) or not self._darf():
             return
-        if jetzt - self.letzte_aktion < k.regie_abstand_s or jetzt - self.ki_ende < 4:
+        if jetzt - self.letzte_aktion < k.regie_abstand_s or jetzt - self.ki_ende < 4 or self._klingel_frisch():
             return
         # seit wann nichts passiert – höchstens seit Beginn dieser Phase des Besuchs
         ruhe = int(min(jetzt - max(self.letzte_aktion, self.ki_ende), time.time() - b.seit))
+        if b.zustand == "geklingelt":
+            # Novos 31.10.: an der Tür redet der Hausherr, die KI-Stimme schweigt – der Regisseur macht weiter
+            await self.entscheiden(f"Nach dem Klingeln: die Besucher sind noch da, der Hausherr redet an der Tür mit "
+                                   f"ihnen – seit {ruhe} Sekunden ist nichts passiert")
+            return
         await self.entscheiden(f"Pause – seit {ruhe} Sekunden ist nichts passiert")
+
+    def _klingel_frisch(self) -> bool:
+        """Gerade geklingelt: der Klingel-Schreck gehört allein der Klingel."""
+        return time.monotonic() - self.z.besuch.klingel_zeit < KLINGEL_RUHE_S
 
     # ------------------------------------------------------------------
     async def entscheiden(self, anlass: str, satz: str = "") -> str:
@@ -253,7 +266,7 @@ class Regie:
         eintrag["effekt"], eintrag["grund"] = effekt, grund
         eintrag["name"] = self._name(effekt, aus)
         # Lage kann sich in der Denkzeit geändert haben (geklingelt, KI spricht, Szene …)
-        if effekt != "keiner" and (z.besuch.zustand == "geklingelt" or z.ki.laeuft or (z.spieler and z.spieler.laufend)):
+        if effekt != "keiner" and (self._klingel_frisch() or z.ki.laeuft or (z.spieler and z.spieler.laufend)):
             eintrag["grund"] = "verworfen – inzwischen passiert etwas anderes"
             effekt = "keiner"
         if effekt != "keiner":
@@ -412,7 +425,7 @@ class Regie:
                 break
             await asyncio.sleep(plan.warten_s)
             gewartet = True
-        if z.besuch.zustand == "geklingelt" or z.ki.laeuft or (z.spieler and z.spieler.laufend):
+        if self._klingel_frisch() or z.ki.laeuft or (z.spieler and z.spieler.laufend):
             self.belegt_bis = 0.0
             return
         await z.fx_spielen(f)

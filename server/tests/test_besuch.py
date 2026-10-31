@@ -64,7 +64,7 @@ def test_normaler_besuch_bis_zum_klingeln_und_abschied(z):
     asyncio.run(b.sensor(FERN, True, "fern"))               # gleich nach dem Klingeln: still (ihr redet)
     assert len(z.gesagt) == 2
     asyncio.run(b.sensor(NAH, False, "nah"))                # Tür wieder frei
-    _vorspulen(b, TUER_FREI_S + 1)
+    _vorspulen(b, max(TUER_FREI_S, NACH_KLINGEL_S) + 1)
     z._richtung = "geht"
     asyncio.run(b.sensor(FERN, True, "fern"))               # gehen wieder (Modell sieht Rücken): Abschied, einmal
     assert z.gesagt[-1].startswith(NACH_KLINGEL) and b.zustand == "geht" and b.abschied_gesagt
@@ -254,7 +254,7 @@ def test_tuer_hat_vorrang(z):
     asyncio.run(b.takt(time.monotonic()))                   # du redest an der Tür, Weg-Sensor an: still
     assert z.gesagt == [TUER]
     asyncio.run(b.sensor(NAH, False, "nah"))                # Tür frei, auf dem Weg jemand (neue Leute)
-    _vorspulen(b, TUER_FREI_S + 1)
+    _vorspulen(b, max(TUER_FREI_S, NACH_KLINGEL_S) + 1)
     asyncio.run(b.takt(time.monotonic()))
     assert z.gesagt[-1].startswith(NACH_KLINGEL) and b.zustand == "gelockt"     # Modell sieht: kommen
 
@@ -282,7 +282,7 @@ def test_abschied_kurz_nach_dem_klingeln(z):
     assert z.ki.spricht_bis == 0
     asyncio.run(b.sensor(NAH, False, "nah"))
     z._richtung = "geht"
-    _vorspulen(b, TUER_FREI_S - 3)
+    _vorspulen(b, max(TUER_FREI_S, NACH_KLINGEL_S) - 3)
     asyncio.run(b.sensor(FERN, True, "fern"))               # zu früh: Tür erst kurz frei
     assert len(z.gesagt) == 1
     _vorspulen(b, 4)
@@ -296,7 +296,7 @@ def test_nach_dem_klingeln_im_zweifel_abschied(z):
     b.klingel()
     asyncio.run(b.sensor(NAH, False, "nah"))
     z._richtung = "steht"
-    _vorspulen(b, TUER_FREI_S + 1)
+    _vorspulen(b, max(TUER_FREI_S, NACH_KLINGEL_S) + 1)
     asyncio.run(b.sensor(FERN, True, "fern"))
     assert z.gesagt[-1].startswith(NACH_KLINGEL) and b.zustand == "geht" and b.abschied_gesagt
 
@@ -314,9 +314,9 @@ def test_nach_dem_klingeln_still_bis_die_tuer_frei_ist(z):
     asyncio.run(b.takt(time.monotonic()))
     assert z.gesagt == [TUER]
     asyncio.run(b.sensor(NAH, False, "nah"))                # Tür zu
-    _vorspulen(b, TUER_FREI_S - 5)
+    _vorspulen(b, TUER_FREI_S - 2)
     asyncio.run(b.takt(time.monotonic()))
     assert z.gesagt == [TUER]                               # noch nicht lange genug frei
-    _vorspulen(b, 6)
+    _vorspulen(b, 3)
     asyncio.run(b.takt(time.monotonic()))
     assert z.gesagt[-1].startswith(NACH_KLINGEL) and "Hexe und Skelett" in z.gesagt[-1] and b.zustand == "geht"

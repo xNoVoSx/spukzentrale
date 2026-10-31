@@ -117,7 +117,7 @@ def test_entscheidung_verworfen_wenn_inzwischen_geklingelt(z, monkeypatch):
     z.besuch.zustand = "tuer"
 
     async def fragen(self, anlass, satz, aus):
-        self.z.besuch.zustand = "geklingelt"
+        self.z.besuch.klingel()                  # während der Denkzeit geklingelt
         return "donner", "Spannung", "Test"
 
     monkeypatch.setattr(Regie, "_fragen", fragen)
@@ -225,3 +225,28 @@ def test_an_der_tuer_erst_spannung_dann_klingel(z):
     assert "fx_schrei" not in aus and "fx_donner" in aus and "licht_blackout" not in aus
     z.besuch.seit = time.time() - 25
     assert "fx_schrei" in z.regie.optionen()
+
+
+def test_regie_macht_nach_dem_klingeln_weiter(z, monkeypatch):
+    """Novos 31.10.: die KI-Stimme schweigt nach dem Klingeln, der Regisseur überrascht weiter – erst nach dem
+    Klingel-Schreck und anfangs nichts Heftiges."""
+    import time
+    from app import regie as regie_mod
+    anlaesse = []
+
+    async def entscheiden(self, anlass, satz=""):
+        anlaesse.append(anlass)
+        return "keiner"
+
+    monkeypatch.setattr(Regie, "entscheiden", entscheiden)
+    b, r = z.besuch, z.regie
+    z.zustand.regie_an = z.zustand.ki_an = True
+    b.klingel()
+    b.an["nah"] = True
+    asyncio.run(r.takt(time.monotonic()))
+    assert anlaesse == []                                      # Klingel-Schreck wirkt allein
+    assert not any(r._heftig(e) for e in r.optionen())         # anfangs nichts Heftiges
+    b.klingel_zeit -= regie_mod.KLINGEL_RUHE_S + 1
+    r.letzte_aktion = r.ki_ende = 0.0
+    asyncio.run(r.takt(time.monotonic()))
+    assert len(anlaesse) == 1 and anlaesse[0].startswith("Nach dem Klingeln")

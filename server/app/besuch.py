@@ -62,7 +62,7 @@ ABSCHIED = ("Die Leute gehen gerade wieder weg. Verabschiede dich gruselig-freun
 
 ABSCHIED_PRUEFEN_S = 10       # genug gelockt, sie drehen um: so schnell darf der Abschied kommen
 NACH_KLINGEL_S = 8            # nach dem Klingeln: ab dann schauen, ob die Leute gehen (sie sind nach 10–25 s weg)
-TUER_FREI_S = 15              # … aber erst, wenn die Klingel-Kamera so lange niemanden mehr sieht (Hausherr redet)
+TUER_FREI_S = 5               # … aber erst, wenn die Klingel-Kamera so lange niemanden mehr sieht (Hausherr redet)
 
 TEXTE = {"leer": "niemand da", "gelockt": "auf dem Weg angesprochen", "tuer": "an der Haustür",
          "geklingelt": "hat geklingelt", "geht": "geht wieder", "nachlauf": "vorbei (Nachlauf)"}
