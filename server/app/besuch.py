@@ -40,6 +40,10 @@ ZOEGERN = ("Du hast sie vor {s} Sekunden schon angesprochen („{satz}“), sie 
            "haben sie ein bisschen Angst. Ermutige sie sanft und freundlich, ohne Druck. Gehen sie weg: verabschiede "
            "dich freundlich und locke sie NICHT zurück.")
 TUER = "Die Leute stehen direkt vor der Haustür – fordere sie auf, die Klingel zu drücken, wenn sie sich trauen."
+NACH_KLINGEL = ("Die Leute an der Haustür haben eben geklingelt und wurden erschreckt. Jetzt ist jemand auf dem Weg zu "
+                "sehen. Schau genau hin: Rücken zur Kamera bzw. vom Haus weg = sie gehen (richtung geht) – dann "
+                "verabschiede dich gruselig-freundlich und locke sie NICHT zurück. Nur wenn klar NEUE Leute aufs Haus "
+                "zukommen (Gesicht zur Kamera, richtung kommt), locke sie zur Haustür. Im Zweifel: verabschieden.")
 ABSCHIED = ("Die Leute gehen gerade wieder weg. Verabschiede dich gruselig-freundlich (zum Beispiel: kommt bald "
             "wieder). Locke sie auf KEINEN Fall zurück und fordere sie zu nichts auf.")
 
@@ -235,14 +239,16 @@ class Besuch:
         if jetzt - self.letzte_pruefung < k.neu_pruefen_s:
             return
         self.letzte_pruefung = jetzt
-        # LOCKEN sagt dem Modell: wer kommt, wird gelockt – wer geht, wird verabschiedet
+        # eigener Hinweis: mit LOCKEN („noch auf dem Weg zum Haus“) hielt das Modell Gehende für Kommende und lockte
+        # sie (Prüfbericht 31.10. nachmittags, 4 von 4)
         abschied = k.abschied and not self.abschied_gesagt
-        ergebnis = await self._sprechen(a, quelle, LOCKEN, reaktion=False, still_bei=() if abschied else ("geht",))
+        ergebnis = await self._sprechen(a, quelle, NACH_KLINGEL, reaktion=False,
+                                        still_bei=() if abschied else ("geht", "steht", "unklar"))
         self.letzte_pruefung = time.monotonic()
         if ergebnis != "gesagt" or self.zustand != "geklingelt":
             return
         e = self.z.ki.verlauf[0] if self.z.ki.verlauf else {}
-        if e.get("richtung") == "geht":
+        if e.get("richtung") != "kommt":                 # im Zweifel gehen sie (der Satz war ein Abschied)
             self.abschied_gesagt = True
             self._wechsel("geht")
             return

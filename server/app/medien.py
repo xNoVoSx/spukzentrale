@@ -8,13 +8,14 @@ Dazu je eine kleine MP3 zum Vorhören im Browser.
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 import shutil
 import uuid
 from pathlib import Path
 
-from . import fxanalyse
+from . import fxanalyse, musikabgleich
 from . import pfade
 from .modelle import Effekt, Medien, Musikstueck
 from .speicher import lade, speichere
@@ -66,13 +67,43 @@ def _hash(pfad: Path) -> str:
     return h.hexdigest()[:12]
 
 
+LOUDNORM = "loudnorm=I=-18:TP=-1.5:LRA=11"
+
+
+def loudnorm_messwerte(stderr: str) -> dict[str, str] | None:
+    """Messwerte aus dem ersten loudnorm-Durchgang (JSON am Ende der ffmpeg-Ausgabe); None = unbrauchbar."""
+    try:
+        d = json.loads(stderr[stderr.rindex("{"):stderr.rindex("}") + 1])
+        werte = {k: str(d[k]) for k in ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")}
+        if any(not re.fullmatch(r"-?\d+(\.\d+)?", v) for v in werte.values()):
+            return None                                  # z. B. "-inf" bei Stille
+        return werte
+    except (ValueError, KeyError):
+        return None
+
+
 async def musik_umwandeln(quelle: Path) -> tuple[str, float, int]:
     """Gibt (id, dauer_s, groesse) zurück. Ergebnis liegt in pfade.MUSIK/<id>.mp3."""
     tmp = pfade.TMP / f"{uuid.uuid4().hex}.mp3"
     try:
+        # Stille am Anfang und Ende abschneiden (0,1 s vorn und 0,5 s Ausklang bleiben) – sonst entstehen Löcher
+        # zwischen den Stücken, die Überblendung blendet dann in die Stille
+        stille = await _ffmpeg("-i", str(quelle), "-vn", "-af",
+                               f"silencedetect=n={musikabgleich.STILLE_DB}dB:d={musikabgleich.STILLE_MIN_S}",
+                               "-f", "null", "-")
+        anfang, ende = musikabgleich.stille_grenzen(stille, await dauer_s(quelle))
+        schnitt = (f"atrim=start={max(0.0, anfang - 0.1):.2f}" + (f":end={ende + 0.5:.2f}" if ende else "")
+                   + ",asetpts=PTS-STARTPTS,")
+        # Lautheit in zwei Durchgängen: erst messen, dann das ganze Stück gleichmäßig lauter/leiser (linear) – die
+        # Dynamik bleibt erhalten. Nur wenn sonst Spitzen übersteuern würden, regelt loudnorm selbst dynamisch.
+        messung = loudnorm_messwerte(await _ffmpeg("-i", str(quelle), "-vn", "-af",
+                                                   schnitt + LOUDNORM + ":print_format=json", "-f", "null", "-"))
+        lautheit = LOUDNORM + (":linear=true:" + ":".join(f"measured_{k[6:]}={v}" for k, v in messung.items()
+                                                          if k != "target_offset")
+                               + f":offset={messung['target_offset']}" if messung else "")
         await _ffmpeg(
             "-i", str(quelle), "-vn", "-map_metadata", "-1",
-            "-af", "loudnorm=I=-18:TP=-1.5:LRA=11",
+            "-af", schnitt + lautheit,
             "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k", str(tmp),
         )
         d = await dauer_s(tmp)
@@ -181,6 +212,7 @@ class MedienVerwaltung:
         self.daten.musik = [m for m in self.daten.musik if m.id != mid]
         self.daten.playlist.reihenfolge = [i for i in self.daten.playlist.reihenfolge if i != mid]
         self.musik_pfad(mid).unlink(missing_ok=True)
+        self.musik_pfad(mid).with_suffix(".abdruck.npy").unlink(missing_ok=True)
         self.speichern()
         return True
 

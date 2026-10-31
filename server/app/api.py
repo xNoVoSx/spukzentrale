@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated, Literal
 
+import numpy as np
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
@@ -21,7 +22,7 @@ from .modelle import (
     Ausloeser, Effekt, Ereignisse, Kategorie, LichtAktion, Musikstueck, Playlist, Stimmung, Szene, Zone, neue_id,
 )
 from .vorgaben import LICHT_JE_KATEGORIE
-from . import fxanalyse
+from . import fxanalyse, musikabgleich
 from .ki import bild_typ
 from .zentrale import Zentrale
 
@@ -376,7 +377,25 @@ async def musik_hochladen(request: Request, datei: Annotated[UploadFile, File()]
         raise HTTPException(400, f"Umwandlung fehlgeschlagen: {e}") from e
     finally:
         roh.unlink(missing_ok=True)
-    s = z.medien.musik_hinzu(Musikstueck(id=mid, name=_anzeigename(datei.filename), dauer_s=round(dauer, 1), groesse=groesse))
+    name = _anzeigename(datei.filename)
+    alt = z.medien.musik(mid)
+    if alt is None:
+        # schon vorhanden (gleicher Name oder gleiche Musik in anderer Datei)? Dann nicht doppelt ablegen
+        neu = z.medien.musik_pfad(mid)
+        vorhandene = [(m, z.medien.musik_pfad(m.id)) for m in z.medien.daten.musik]
+        try:
+            alt, abdruck = await asyncio.get_running_loop().run_in_executor(
+                None, musikabgleich.doppelt, neu, name, vorhandene)
+        except Exception:  # noqa: BLE001 – Prüfung kaputt: lieber doppelt als gar nicht hochladen
+            log.exception("Musik-Abgleich")
+            alt, abdruck = None, None
+        if alt is not None:
+            neu.unlink(missing_ok=True)
+        elif abdruck is not None and len(abdruck):
+            np.save(neu.with_suffix(".abdruck.npy"), abdruck)
+    if alt is not None:
+        raise HTTPException(409, f"schon vorhanden als „{alt.name}“")
+    s = z.medien.musik_hinzu(Musikstueck(id=mid, name=name, dauer_s=round(dauer, 1), groesse=groesse))
     z.protokollieren(f"Musik hochgeladen: {s.name}", "info")
     z.daten_geaendert()
     if s.analyse is None:

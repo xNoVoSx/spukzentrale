@@ -5,7 +5,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.besuch import ABSCHIED, LOCKEN, NACH_KLINGEL_S, TUER
+from app.besuch import ABSCHIED, LOCKEN, NACH_KLINGEL, NACH_KLINGEL_S, TUER
 from app.ki import KiStimme
 from app.main import app
 from app.modelle import Ausloeser
@@ -64,7 +64,7 @@ def test_normaler_besuch_bis_zum_klingeln_und_abschied(z):
     z._richtung = "geht"
     asyncio.run(b.sensor(NAH, False, "nah"))                # Tür wieder frei
     asyncio.run(b.sensor(FERN, True, "fern"))               # gehen wieder (Modell sieht Rücken): Abschied, einmal
-    assert z.gesagt[-1] == LOCKEN and b.zustand == "geht" and b.abschied_gesagt
+    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "geht" and b.abschied_gesagt
     asyncio.run(b.sensor(FERN, True, "fern"))
     assert len(z.gesagt) == 3                               # nie zurücklocken
     _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
@@ -217,7 +217,7 @@ def test_nach_dem_klingeln_kommt_schon_die_naechste_gruppe(z):
     assert z.gesagt == [TUER]
     _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
     asyncio.run(b.takt(time.monotonic()))                   # Weg-Sensor bleibt an, neue Leute kommen
-    assert z.gesagt[-1] == LOCKEN and b.zustand == "gelockt" and b.gelockt == 1 and not b.tuer_gesagt
+    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "gelockt" and b.gelockt == 1 and not b.tuer_gesagt
     asyncio.run(b.sensor(NAH, True, "nah"))                 # die Neuen an der Tür: wieder Aufforderung
     assert z.gesagt[-1] == TUER and b.zustand == "tuer"
 
@@ -252,7 +252,7 @@ def test_tuer_hat_vorrang(z):
     assert z.gesagt == [TUER]
     asyncio.run(b.sensor(NAH, False, "nah"))                # Tür frei, auf dem Weg jemand (neue Leute)
     asyncio.run(b.takt(time.monotonic()))
-    assert z.gesagt[-1] == LOCKEN and b.zustand == "gelockt"
+    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "gelockt"     # Modell sieht: kommen
 
 
 def test_keine_zweite_stimme_solange_der_satz_noch_zu_hoeren_ist(z):
@@ -283,4 +283,15 @@ def test_abschied_kurz_nach_dem_klingeln(z):
     assert len(z.gesagt) == 1
     _vorspulen(b, 4)
     asyncio.run(b.sensor(FERN, True, "fern"))
-    assert z.gesagt[-1] == LOCKEN and b.zustand == "geht" and b.abschied_gesagt
+    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "geht" and b.abschied_gesagt
+
+
+def test_nach_dem_klingeln_im_zweifel_abschied(z):
+    b = z.besuch
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    b.klingel()
+    asyncio.run(b.sensor(NAH, False, "nah"))
+    z._richtung = "steht"
+    _vorspulen(b, NACH_KLINGEL_S + 1)
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "geht" and b.abschied_gesagt

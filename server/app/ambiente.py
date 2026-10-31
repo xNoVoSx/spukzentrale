@@ -21,6 +21,7 @@ from collections.abc import AsyncIterator, Callable
 
 import numpy as np
 
+from . import musikabgleich
 from .medien import MedienVerwaltung
 
 log = logging.getLogger(__name__)
@@ -256,18 +257,21 @@ class Ambiente:
             self._setze_jetzt(None)
 
     # ------------------------------------------------------------------
-    def _naechste_runde(self) -> list[str]:
+    def _naechste_runde(self, vorher: str | None = None) -> list[str]:
+        """Eine Runde der Playlist. Zufall: jedes Stück einmal, nacheinander passend (Tempo, Stimmung, Energie)."""
         pl = self.medien.daten.playlist
         ids = [i for i in pl.reihenfolge if self.medien.musik(i)]
         if pl.zufall:
-            random.shuffle(ids)
+            return musikabgleich.reihenfolge([self.medien.musik(i) for i in ids],
+                                             self.medien.musik(vorher) if vorher else None)
         return ids
 
     async def _pcm(self) -> AsyncIterator[np.ndarray]:
         """Endloser PCM-Strom (int16, Form (n, 2)) mit Überblendungen."""
         rest: np.ndarray | None = None  # zurückgehaltenes Ende des vorigen Stücks (float32)
+        mid: str | None = None
         while True:
-            ids = self._naechste_runde()
+            ids = self._naechste_runde(mid)
             if not ids:
                 self._setze_jetzt(None)
                 if rest is not None:  # letztes Stück sauber ausklingen lassen
