@@ -5,7 +5,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.besuch import ABSCHIED, LOCKEN, NACH_KLINGEL, NACH_KLINGEL_S, TUER, TUER_FREI_S
+from app.besuch import ABSCHIED, LOCKEN, NACH_KLINGEL, NACH_KLINGEL_S, TUER, TUER_FREI_S, VON_DER_TUER
 from app.ki import KiStimme
 from app.main import app
 from app.modelle import Ausloeser
@@ -105,8 +105,23 @@ def test_an_der_tuer_ohne_klingeln_wieder_weg(z):
     asyncio.run(b.sensor(NAH, True, "nah"))
     assert z.gesagt == [TUER]
     asyncio.run(b.sensor(NAH, False, "nah"))
+    asyncio.run(b.sensor(FERN, True, "fern"))               # Tür gerade erst frei (oder Erkennung kurz weg): still
+    assert z.gesagt == [TUER] and b.zustand == "tuer"
+    _vorspulen(b, max(TUER_FREI_S, NACH_KLINGEL_S) + 1)
+    z._richtung = "geht"
+    asyncio.run(b.takt(time.monotonic()))
+    assert z.gesagt[-1].startswith(VON_DER_TUER) and "Hexe und Skelett" in z.gesagt[-1] and b.zustand == "geht"
+
+
+def test_an_der_tuer_kein_abschied_an_kommende(z):
+    """31.10. abends: Erkennung an der Tür kurz weg, die Weg-Kamera sieht die nächsten – die bekamen „Auf Wiedersehen“."""
+    b = z.besuch
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    asyncio.run(b.sensor(NAH, False, "nah"))
+    _vorspulen(b, max(TUER_FREI_S, NACH_KLINGEL_S) + 1)
+    z._richtung = "kommt"
     asyncio.run(b.sensor(FERN, True, "fern"))
-    assert z.gesagt[-1] == ABSCHIED and b.zustand == "geht"
+    assert z.gesagt[-1].startswith(VON_DER_TUER) and b.zustand == "gelockt" and not b.abschied_gesagt
 
 
 def test_besuch_endet_und_naechster_beginnt(z):
@@ -182,8 +197,10 @@ def test_naechste_gruppe_kommt_waehrend_die_erste_geht(z):
     b = z.besuch
     asyncio.run(b.sensor(NAH, True, "nah"))
     asyncio.run(b.sensor(NAH, False, "nah"))
+    _vorspulen(b, max(TUER_FREI_S, NACH_KLINGEL_S) + 1)
+    z._richtung = "geht"
     asyncio.run(b.sensor(FERN, True, "fern"))
-    assert b.zustand == "geht" and z.gesagt == [TUER, ABSCHIED]
+    assert b.zustand == "geht" and len(z.gesagt) == 2 and z.gesagt[1].startswith(VON_DER_TUER)
     asyncio.run(b.sensor(NAH, True, "nah"))                 # zu früh nach dem Abschied: nicht mal hinschauen
     assert len(z.gesagt) == 2 and z.geprueft == 0
     asyncio.run(b.sensor(NAH, False, "nah"))

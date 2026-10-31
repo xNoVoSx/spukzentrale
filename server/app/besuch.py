@@ -41,16 +41,20 @@ ZOEGERN = ("Du hast sie vor {s} Sekunden schon angesprochen („{satz}“), sie 
            "dich freundlich und locke sie NICHT zurück.")
 TUER = "Die Leute stehen direkt vor der Haustür – fordere sie auf, die Klingel zu drücken, wenn sie sich trauen."
 NACH_KLINGEL = "Die Leute an der Haustür haben eben geklingelt und wurden erschreckt."
+VON_DER_TUER = "Eben standen Leute an der Haustür, sie haben (noch) nicht geklingelt."
 
 
-def nach_klingel_hinweis(leute: str) -> str:
-    """Abschied über die Weg-Kamera nach dem Klingeln – nur für genau die Leute, die an der Tür waren (Novos:
-    an der Tür redet der Hausherr mit ihnen, die KI darf weder dazwischen noch über ihn reden)."""
+def tuer_verlassen_hinweis(leute: str, geklingelt: bool) -> str:
+    """Die Weg-Kamera sieht jemanden, nachdem Leute an der Tür waren: Abschied nur für genau diese Leute (Novos:
+    an der Tür redet der Hausherr mit ihnen; die KI sagte Kommenden „Auf Wiedersehen“, während die anderen noch an
+    der Tür standen – 31.10. abends)."""
+    anfang = NACH_KLINGEL if geklingelt else VON_DER_TUER
     if not leute:
-        return (NACH_KLINGEL + " Jetzt ist jemand auf dem Weg zu sehen. Gehen sie weg (Rücken zur Kamera, richtung "
-                "geht): verabschiede dich gruselig-freundlich und locke sie NICHT zurück. Kommen klar NEUE Leute aufs "
-                "Haus zu (richtung kommt): locke sie zur Haustür. Im Zweifel: verabschieden.")
-    return (NACH_KLINGEL + f" An der Tür waren: {leute}. Sind genau diese Leute (gleiche Kostüme bzw. Kleidung) "
+        return (anfang + " Jetzt ist jemand auf dem Weg zu sehen. Gehen sie weg (Rücken zur Kamera, richtung geht): "
+                "verabschiede dich gruselig-freundlich und locke sie NICHT zurück. Kommen klar NEUE Leute aufs Haus "
+                "zu (richtung kommt): locke sie zur Haustür. "
+                + ("Im Zweifel: verabschieden." if geklingelt else "Im Zweifel: lass den satz leer."))
+    return (anfang + f" An der Tür waren: {leute}. Sind genau diese Leute (gleiche Kostüme bzw. Kleidung) "
             "jetzt auf dem Weg zu sehen und gehen sie weg: verabschiede sie gruselig-freundlich und locke sie NICHT "
             "zurück (richtung geht). Kommen klar ANDERE Leute aufs Haus zu (richtung kommt): locke sie zur Haustür. "
             "Sind die Leute von der Tür nicht zu sehen: lass den satz leer – sprich niemand anderen an und rede über "
@@ -169,10 +173,8 @@ class Besuch:
                     self.ausstehend = (a, LOCKEN, True, time.monotonic())
             elif st == "gelockt":
                 await self._nachfassen(a, quelle)
-            elif st == "tuer" and not self.an["nah"]:
-                await self._abschied(a, quelle)                  # waren an der Tür, sind jetzt wieder auf dem Weg
-            elif st == "geklingelt":
-                await self._nach_klingel(a, quelle)
+            elif st in ("tuer", "geklingelt"):
+                await self._tuer_verlassen(a, quelle)            # waren an der Tür: gehen sie oder kommen neue?
             elif st in ("geht", "nachlauf"):
                 await self._neue_leute(a, quelle)
         else:  # nah
@@ -249,11 +251,15 @@ class Besuch:
             self.tuer_gesagt = True
             self._wechsel("tuer")
 
-    async def _nach_klingel(self, a: Ausloeser, quelle: str) -> None:
-        """Nach dem Klingeln jemand auf dem Weg: die Leute gehen (Abschied) oder die nächsten kommen (neuer Besuch)."""
+    async def _tuer_verlassen(self, a: Ausloeser, quelle: str) -> None:
+        """Nach der Tür (mit oder ohne Klingeln) jemand auf dem Weg: die Leute gehen (Abschied), die nächsten kommen
+        (neuer Besuch) – oder es ist jemand anderes bzw. sie stehen noch an der Tür (still)."""
         k = self.z.einst.ki
         jetzt = time.monotonic()
-        if jetzt - max(self.klingel_zeit, self.letzte_ansprache) < NACH_KLINGEL_S or not self._darf_sprechen():
+        alt = self.zustand
+        geklingelt = alt == "geklingelt"
+        seit = max(self.klingel_zeit, self.letzte_ansprache) if geklingelt else self.letzte_ansprache
+        if jetzt - seit < NACH_KLINGEL_S or not self._darf_sprechen():
             return
         if self.an["nah"] or (self.nah_aus_seit and jetzt - self.nah_aus_seit < TUER_FREI_S):
             return                                       # an der Tür wird noch geredet
@@ -263,17 +269,17 @@ class Besuch:
         # eigener Hinweis: mit LOCKEN („noch auf dem Weg zum Haus“) hielt das Modell Gehende für Kommende und lockte
         # sie (Prüfbericht 31.10. nachmittags, 4 von 4)
         abschied = k.abschied and not self.abschied_gesagt
-        ergebnis = await self._sprechen(a, quelle, nach_klingel_hinweis(self.tuer_leute), reaktion=False,
+        ergebnis = await self._sprechen(a, quelle, tuer_verlassen_hinweis(self.tuer_leute, geklingelt), reaktion=False,
                                         still_bei=() if abschied else ("geht", "steht", "unklar"))
         self.letzte_pruefung = time.monotonic()
-        if ergebnis != "gesagt" or self.zustand != "geklingelt":
+        if ergebnis != "gesagt" or self.zustand != alt:
             return
         e = self.z.ki.verlauf[0] if self.z.ki.verlauf else {}
         if e.get("richtung") != "kommt":                 # im Zweifel gehen sie (der Satz war ein Abschied)
             self.abschied_gesagt = True
             self._wechsel("geht")
             return
-        log.info("Besuch: nach dem Klingeln kommen neue Leute")
+        log.info("Besuch: nach der Tür kommen neue Leute")
         satz = self.letzter_satz
         self._neu()
         self.letzter_satz = satz
@@ -327,12 +333,6 @@ class Besuch:
         self.pause_bis = pause
         self._melden()
 
-    async def _abschied(self, a: Ausloeser, quelle: str) -> None:
-        self._wechsel("geht")
-        if self.z.einst.ki.abschied and not self.abschied_gesagt:
-            self.abschied_gesagt = True
-            await self._sprechen(a, quelle, ABSCHIED, reaktion=False)
-
     async def _sprechen(self, a: Ausloeser, quelle: str, lage: str, ersatz: bool = False,
                         reaktion: bool = True, still_bei: tuple[str, ...] = ()) -> str:
         if not self._darf_sprechen():
@@ -382,9 +382,10 @@ class Besuch:
         if st == "gelockt" and self.an["fern"] and not self.an["nah"] and self.fern and not self.z.ki.spricht():
             if self.gelockt < k.locken_max and jetzt - self.letzte_ansprache >= k.locken_wiederholen_s:
                 await self._nachfassen(self.fern, self.fern.name)
-        # nach dem Klingeln bleibt der Weg-Sensor an: gehen die Leute oder kommen schon die nächsten?
-        if st == "geklingelt" and self.an["fern"] and not self.an["nah"] and self.fern and not self.z.ki.spricht():
-            await self._nach_klingel(self.fern, self.fern.name)
+        # nach der Tür bleibt der Weg-Sensor an: gehen die Leute oder kommen schon die nächsten?
+        if st in ("tuer", "geklingelt") and self.an["fern"] and not self.an["nah"] and self.fern \
+                and not self.z.ki.spricht():
+            await self._tuer_verlassen(self.fern, self.fern.name)
         # geht/nachlauf und der Sensor bleibt an: ab und zu schauen, ob schon die nächste Gruppe kommt
         if st in ("geht", "nachlauf") and jemand and not self.z.ki.spricht():
             a = self.nah if self.an["nah"] and self.nah else self.fern if self.an["fern"] else None
