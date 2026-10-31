@@ -5,7 +5,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.besuch import ABSCHIED, LOCKEN, NACH_KLINGEL, NACH_KLINGEL_S, TUER
+from app.besuch import ABSCHIED, LOCKEN, NACH_KLINGEL, NACH_KLINGEL_S, TUER, TUER_FREI_S
 from app.ki import KiStimme
 from app.main import app
 from app.modelle import Ausloeser
@@ -20,7 +20,8 @@ def z(monkeypatch):
             self.z.geprueft += 1
             return "still"
         gesagt.append(lage)
-        self.verlauf.appendleft({"satz": f"Satz {len(gesagt)}", "richtung": self.z._richtung, "ergebnis": "gesagt"})
+        self.verlauf.appendleft({"satz": f"Satz {len(gesagt)}", "richtung": self.z._richtung, "ergebnis": "gesagt",
+                                 "beschreibung": "zwei Kinder, Hexe und Skelett"})
         return "gesagt"
 
     monkeypatch.setattr(KiStimme, "ansprechen", ansprechen)
@@ -45,6 +46,8 @@ def _vorspulen(b, s):
     b.klingel_zeit -= s
     b.seit -= s
     b.letzte_pruefung -= s
+    if b.nah_aus_seit:
+        b.nah_aus_seit -= s
 
 
 def test_normaler_besuch_bis_zum_klingeln_und_abschied(z):
@@ -60,11 +63,11 @@ def test_normaler_besuch_bis_zum_klingeln_und_abschied(z):
     assert b.zustand == "geklingelt" and z.ki.abbrechen
     asyncio.run(b.sensor(FERN, True, "fern"))               # gleich nach dem Klingeln: still (ihr redet)
     assert len(z.gesagt) == 2
-    _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
-    z._richtung = "geht"
     asyncio.run(b.sensor(NAH, False, "nah"))                # Tür wieder frei
+    _vorspulen(b, TUER_FREI_S + 1)
+    z._richtung = "geht"
     asyncio.run(b.sensor(FERN, True, "fern"))               # gehen wieder (Modell sieht Rücken): Abschied, einmal
-    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "geht" and b.abschied_gesagt
+    assert z.gesagt[-1].startswith(NACH_KLINGEL) and b.zustand == "geht" and b.abschied_gesagt
     asyncio.run(b.sensor(FERN, True, "fern"))
     assert len(z.gesagt) == 3                               # nie zurücklocken
     _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
@@ -217,7 +220,7 @@ def test_nach_dem_klingeln_kommt_schon_die_naechste_gruppe(z):
     assert z.gesagt == [TUER]
     _vorspulen(b, z.einst.ki.neu_pruefen_s + 1)
     asyncio.run(b.takt(time.monotonic()))                   # Weg-Sensor bleibt an, neue Leute kommen
-    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "gelockt" and b.gelockt == 1 and not b.tuer_gesagt
+    assert z.gesagt[-1].startswith(NACH_KLINGEL) and b.zustand == "gelockt" and b.gelockt == 1 and not b.tuer_gesagt
     asyncio.run(b.sensor(NAH, True, "nah"))                 # die Neuen an der Tür: wieder Aufforderung
     assert z.gesagt[-1] == TUER and b.zustand == "tuer"
 
@@ -251,8 +254,9 @@ def test_tuer_hat_vorrang(z):
     asyncio.run(b.takt(time.monotonic()))                   # du redest an der Tür, Weg-Sensor an: still
     assert z.gesagt == [TUER]
     asyncio.run(b.sensor(NAH, False, "nah"))                # Tür frei, auf dem Weg jemand (neue Leute)
+    _vorspulen(b, TUER_FREI_S + 1)
     asyncio.run(b.takt(time.monotonic()))
-    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "gelockt"     # Modell sieht: kommen
+    assert z.gesagt[-1].startswith(NACH_KLINGEL) and b.zustand == "gelockt"     # Modell sieht: kommen
 
 
 def test_keine_zweite_stimme_solange_der_satz_noch_zu_hoeren_ist(z):
@@ -278,12 +282,12 @@ def test_abschied_kurz_nach_dem_klingeln(z):
     assert z.ki.spricht_bis == 0
     asyncio.run(b.sensor(NAH, False, "nah"))
     z._richtung = "geht"
-    _vorspulen(b, NACH_KLINGEL_S - 3)
-    asyncio.run(b.sensor(FERN, True, "fern"))               # zu früh: der Schreck klingt noch
+    _vorspulen(b, TUER_FREI_S - 3)
+    asyncio.run(b.sensor(FERN, True, "fern"))               # zu früh: Tür erst kurz frei
     assert len(z.gesagt) == 1
     _vorspulen(b, 4)
     asyncio.run(b.sensor(FERN, True, "fern"))
-    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "geht" and b.abschied_gesagt
+    assert z.gesagt[-1].startswith(NACH_KLINGEL) and b.zustand == "geht" and b.abschied_gesagt
 
 
 def test_nach_dem_klingeln_im_zweifel_abschied(z):
@@ -292,6 +296,27 @@ def test_nach_dem_klingeln_im_zweifel_abschied(z):
     b.klingel()
     asyncio.run(b.sensor(NAH, False, "nah"))
     z._richtung = "steht"
-    _vorspulen(b, NACH_KLINGEL_S + 1)
+    _vorspulen(b, TUER_FREI_S + 1)
     asyncio.run(b.sensor(FERN, True, "fern"))
-    assert z.gesagt[-1] == NACH_KLINGEL and b.zustand == "geht" and b.abschied_gesagt
+    assert z.gesagt[-1].startswith(NACH_KLINGEL) and b.zustand == "geht" and b.abschied_gesagt
+
+
+def test_nach_dem_klingeln_still_bis_die_tuer_frei_ist(z):
+    """Novos 31.10.: nach dem Klingeln redet der Hausherr an der Tür – die KI schweigt, bis die Klingel-Kamera 15 s
+    niemanden mehr sieht, und verabschiedet dann nur die Leute, die an der Tür waren."""
+    b = z.besuch
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    assert z.gesagt == [TUER] and b.tuer_leute == "zwei Kinder, Hexe und Skelett"
+    b.klingel()
+    z._richtung = "geht"
+    _vorspulen(b, 60)
+    asyncio.run(b.sensor(FERN, True, "fern"))               # Tür noch besetzt (Hausherr redet): still
+    asyncio.run(b.takt(time.monotonic()))
+    assert z.gesagt == [TUER]
+    asyncio.run(b.sensor(NAH, False, "nah"))                # Tür zu
+    _vorspulen(b, TUER_FREI_S - 5)
+    asyncio.run(b.takt(time.monotonic()))
+    assert z.gesagt == [TUER]                               # noch nicht lange genug frei
+    _vorspulen(b, 6)
+    asyncio.run(b.takt(time.monotonic()))
+    assert z.gesagt[-1].startswith(NACH_KLINGEL) and "Hexe und Skelett" in z.gesagt[-1] and b.zustand == "geht"

@@ -40,15 +40,29 @@ ZOEGERN = ("Du hast sie vor {s} Sekunden schon angesprochen („{satz}“), sie 
            "haben sie ein bisschen Angst. Ermutige sie sanft und freundlich, ohne Druck. Gehen sie weg: verabschiede "
            "dich freundlich und locke sie NICHT zurück.")
 TUER = "Die Leute stehen direkt vor der Haustür – fordere sie auf, die Klingel zu drücken, wenn sie sich trauen."
-NACH_KLINGEL = ("Die Leute an der Haustür haben eben geklingelt und wurden erschreckt. Jetzt ist jemand auf dem Weg zu "
-                "sehen. Schau genau hin: Rücken zur Kamera bzw. vom Haus weg = sie gehen (richtung geht) – dann "
-                "verabschiede dich gruselig-freundlich und locke sie NICHT zurück. Nur wenn klar NEUE Leute aufs Haus "
-                "zukommen (Gesicht zur Kamera, richtung kommt), locke sie zur Haustür. Im Zweifel: verabschieden.")
+NACH_KLINGEL = "Die Leute an der Haustür haben eben geklingelt und wurden erschreckt."
+
+
+def nach_klingel_hinweis(leute: str) -> str:
+    """Abschied über die Weg-Kamera nach dem Klingeln – nur für genau die Leute, die an der Tür waren (Novos:
+    an der Tür redet der Hausherr mit ihnen, die KI darf weder dazwischen noch über ihn reden)."""
+    if not leute:
+        return (NACH_KLINGEL + " Jetzt ist jemand auf dem Weg zu sehen. Gehen sie weg (Rücken zur Kamera, richtung "
+                "geht): verabschiede dich gruselig-freundlich und locke sie NICHT zurück. Kommen klar NEUE Leute aufs "
+                "Haus zu (richtung kommt): locke sie zur Haustür. Im Zweifel: verabschieden.")
+    return (NACH_KLINGEL + f" An der Tür waren: {leute}. Sind genau diese Leute (gleiche Kostüme bzw. Kleidung) "
+            "jetzt auf dem Weg zu sehen und gehen sie weg: verabschiede sie gruselig-freundlich und locke sie NICHT "
+            "zurück (richtung geht). Kommen klar ANDERE Leute aufs Haus zu (richtung kommt): locke sie zur Haustür. "
+            "Sind die Leute von der Tür nicht zu sehen: lass den satz leer – sprich niemand anderen an und rede über "
+            "niemanden.")
+
+
 ABSCHIED = ("Die Leute gehen gerade wieder weg. Verabschiede dich gruselig-freundlich (zum Beispiel: kommt bald "
             "wieder). Locke sie auf KEINEN Fall zurück und fordere sie zu nichts auf.")
 
 ABSCHIED_PRUEFEN_S = 10       # genug gelockt, sie drehen um: so schnell darf der Abschied kommen
 NACH_KLINGEL_S = 8            # nach dem Klingeln: ab dann schauen, ob die Leute gehen (sie sind nach 10–25 s weg)
+TUER_FREI_S = 15              # … aber erst, wenn die Klingel-Kamera so lange niemanden mehr sieht (Hausherr redet)
 
 TEXTE = {"leer": "niemand da", "gelockt": "auf dem Weg angesprochen", "tuer": "an der Haustür",
          "geklingelt": "hat geklingelt", "geht": "geht wieder", "nachlauf": "vorbei (Nachlauf)"}
@@ -66,6 +80,8 @@ class Besuch:
         self.letzte_pruefung = 0.0         # monotonic: zuletzt in geht/nachlauf nach neuen Leuten geschaut
         self.letzter_satz = ""
         self.klingel_zeit = 0.0            # monotonic
+        self.nah_aus_seit = 0.0            # monotonic: seit wann die Klingel-Kamera niemanden mehr sieht
+        self.tuer_leute = ""               # Beschreibung der Leute beim Tür-Satz (für den Abschied nach dem Klingeln)
         self.an: dict[str, bool] = {"fern": False, "nah": False}
         self.zuletzt_jemand = 0.0          # monotonic: letzter Moment mit Person
         self.pause_bis = 0.0               # time.time()
@@ -109,6 +125,7 @@ class Besuch:
         self.gelockt = 0
         self.tuer_gesagt = self.abschied_gesagt = False
         self.letzter_satz = ""
+        self.tuer_leute = ""
         self.z.ki.letzte.clear()
 
     def _melden(self) -> None:
@@ -126,6 +143,8 @@ class Besuch:
         """Personensensor mit Rolle fern/nah hat geschaltet."""
         jetzt = time.monotonic()
         self.an[a.rolle] = an
+        if a.rolle == "nah":
+            self.nah_aus_seit = 0.0 if an else jetzt
         if an:
             self.zuletzt_jemand = jetzt
         if a.rolle == "fern":
@@ -236,13 +255,15 @@ class Besuch:
         jetzt = time.monotonic()
         if jetzt - max(self.klingel_zeit, self.letzte_ansprache) < NACH_KLINGEL_S or not self._darf_sprechen():
             return
+        if self.an["nah"] or (self.nah_aus_seit and jetzt - self.nah_aus_seit < TUER_FREI_S):
+            return                                       # an der Tür wird noch geredet
         if jetzt - self.letzte_pruefung < k.neu_pruefen_s:
             return
         self.letzte_pruefung = jetzt
         # eigener Hinweis: mit LOCKEN („noch auf dem Weg zum Haus“) hielt das Modell Gehende für Kommende und lockte
         # sie (Prüfbericht 31.10. nachmittags, 4 von 4)
         abschied = k.abschied and not self.abschied_gesagt
-        ergebnis = await self._sprechen(a, quelle, NACH_KLINGEL, reaktion=False,
+        ergebnis = await self._sprechen(a, quelle, nach_klingel_hinweis(self.tuer_leute), reaktion=False,
                                         still_bei=() if abschied else ("geht", "steht", "unklar"))
         self.letzte_pruefung = time.monotonic()
         if ergebnis != "gesagt" or self.zustand != "geklingelt":
@@ -330,6 +351,8 @@ class Besuch:
         e = self.z.ki.verlauf[0] if self.z.ki.verlauf else {}
         if ergebnis == "gesagt":
             self.letzter_satz = e.get("satz", "")
+            if lage == TUER:
+                self.tuer_leute = e.get("beschreibung", "")
             if e.get("richtung") == "geht" and self.zustand == "gelockt":
                 # das Modell hat sich (laut Vorgabe) schon verabschiedet
                 self.abschied_gesagt = True
