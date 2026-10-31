@@ -41,10 +41,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 NICHT_FUER_REGIE = {"stimme", "reaktion", "system", "spieluhr", "sonstiges"}   # Spieluhr: eigene Musik, nur gezielt
-# nur Licht – Name: (Aktion, Dauer ms, Beschreibung fürs Modell)
+# nur Licht – Name: (Aktion, Dauer ms, Beschreibung fürs Modell). Kein „Flackern“: ohne Sound dimmt es nur leicht nach unten
+# und war an der Wand unsichtbar (Prüfbericht 31.10. nachts) – flackerndes Licht gibt es über die Licht-Szenen.
 LICHT = {
     "licht_blitz": ("blitz", 400, "ein greller Blitz"),
-    "licht_flackern": ("flackern", 2500, "das Licht flackert unruhig"),
     "licht_welle": ("welle", 2000, "eine Lichtwelle läuft über die Wand"),
     "licht_puls": ("puls", 1500, "das Licht pulsiert einmal auf"),
 }

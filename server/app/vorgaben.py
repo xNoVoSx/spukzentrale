@@ -39,8 +39,9 @@ def _alle(e: str, tempo=50, staerke=80, basis=5) -> list[Zone]:
 
 
 # (Version, in der die Stimmung dazukam, Stimmung) – siehe Zentrale._vorgaben_ergaenzen
-STIMMUNGEN_VERSION = 4
-STIMMUNGEN_ERSETZT = {4: {"wetterleuchten"}}     # heller: der Blitz muss sichtbar sein (Prüfbericht 31.10.)
+STIMMUNGEN_VERSION = 5
+STIMMUNGEN_ERSETZT = {4: {"wetterleuchten"},     # heller: der Blitz muss sichtbar sein (Prüfbericht 31.10.)
+                      5: {"dunkel"}}             # „Fast dunkel“ war mit Gamma 3,0 an der Wand schwarz (Prüfbericht 31.10. nachts)
 STIMMUNGEN = [(1, s) for s in [
     Stimmung(id="gruselig", name="Gruselig ruhig", eingebaut=True, zonen=[
         Zone(e="flackern", tempo=40, staerke=55, basis=10),
@@ -60,7 +61,7 @@ STIMMUNGEN = [(1, s) for s in [
         Zone(e="flackern", tempo=40, staerke=50, basis=10),
     ]),
     Stimmung(id="herzschlag", name="Herzschlag", eingebaut=True, zonen=_alle("herzschlag", 40, 85, 6)),
-    Stimmung(id="dunkel", name="Fast dunkel", eingebaut=True, zonen=_alle("atmen", 20, 25, 3)),
+    Stimmung(id="dunkel", name="Fast dunkel", eingebaut=True, zonen=_alle("atmen", 20, 40, 22)),
     Stimmung(id="musik", name="Zur Musik", eingebaut=True, zonen=_alle("musik", 50, 90, 8), musik_reaktiv=40),
 ]] + [(2, s) for s in [
     # Bausteine für die Licht-Szenen (ohne Ton)

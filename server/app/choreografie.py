@@ -30,6 +30,7 @@ MUSIK_EFFEKTE = {"musik", "spektrum", "beat"}
 SCHLAEGE_PRO_PHRASE = 16
 PHRASE_OHNE_TAKT_S = 10.0
 DROP_DB = 12                    # Pegelsprung (Analyse-Skala 0..100 ≈ 40 dB) innerhalb von 2 s = Drop
+GLIMM_STAERKE, GLIMM_BASIS = 40, 25    # „aus“-Zonen vor grund_max (siehe muster)
 LEISE, LAUT = -8, 3             # Phrasen-Pegel gegen den Median des Stücks
 # Muster je Energiestufe, gewichtet nach der Stimmung des Stücks (siehe musikanalyse.STIMMUNGS_KLASSEN)
 STUFEN = {
@@ -48,8 +49,10 @@ def muster(name: str, n: int, vorbild: Zone) -> list[Zone]:
     """Zonen-Muster aus der Grundbeleuchtung (Tempo, Stärke, Basis der ersten Zone)."""
     an = lambda e="musik", **k: Zone(**{"e": e, "tempo": vorbild.tempo, "staerke": vorbild.staerke,  # noqa: E731
                                         "basis": vorbild.basis, **k})
-    # „aus“ heißt hier: schwach glimmen statt schwarz – Dunkelheit ohne Folge wirkt kaputt (Novos)
-    aus = Zone(e="atmen", tempo=15, staerke=max(6, vorbild.basis), basis=max(3, vorbild.basis // 2))
+    # „aus“ heißt hier: schwach glimmen statt schwarz – Dunkelheit ohne Folge wirkt kaputt (Novos). Die Werte sind so
+    # hoch, weil grund_max sie noch kürzt (55 % -> 22/14) und der ESP mit Gamma rechnet: 4 % wären an der Wand 0
+    # (Prüfbericht 31.10. nachts), 14–22 % glühen bei Gamma 3,0 sichtbar, bleiben aber weit unter den Musik-Zonen.
+    aus = Zone(e="atmen", tempo=15, staerke=GLIMM_STAERKE, basis=GLIMM_BASIS)
     mitte = set(range(max(0, n // 2 - 1), min(n, n // 2 + 2))) if n >= 5 else ({n // 2} if n % 2 else {n // 2 - 1, n // 2})
     if name == "alle":
         return [an() for _ in range(n)]
@@ -67,7 +70,8 @@ def muster(name: str, n: int, vorbild: Zone) -> list[Zone]:
         return [an("wandern", tempo=25, basis=0) for _ in range(n)]
     if name == "ruhig":                         # ruhige Stelle: fast dunkel, eine Zone atmet deutlich
         k = random.randrange(n)
-        return [an("atmen", tempo=20, staerke=max(30, vorbild.staerke // 2), basis=4) if i == k else aus.model_copy()
+        return [an("atmen", tempo=20, staerke=max(60, vorbild.staerke * 3 // 4), basis=GLIMM_BASIS) if i == k
+                else aus.model_copy()
                 for i in range(n)]
     if name == "gesang":                        # Gesang: ruhiges Glühen in der Mitte, außen glimmend
         return [an() if i in mitte else aus.model_copy() for i in range(n)]

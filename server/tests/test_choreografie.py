@@ -10,7 +10,7 @@ from app.modelle import Effekt, Musikstueck, MusikAnalyse, Zone
 
 
 def _hell(zonen):
-    return [z.staerke >= 30 for z in zonen]
+    return [z.staerke > choreografie.GLIMM_STAERKE for z in zonen]
 
 
 def test_muster():
@@ -21,6 +21,9 @@ def test_muster():
     assert sum(_hell(choreografie.muster("ruhig", 5, v))) == 1
     for name in ("aussen_aus", "mitte", "wechsel", "ruhig", "gesang", "beat"):
         assert all(z.e != "aus" and z.basis > 0 for z in choreografie.muster(name, 5, v))    # nie ganz schwarz
+    # das Glimmen muss auch nach grund_max 55 und Gamma 3,0 auf dem ESP (12 bit) noch Licht geben (Prüfbericht 31.10.)
+    for z in choreografie.muster("mitte", 5, v)[:1]:                                 # Zone 1 glimmt
+        assert z.e == "atmen" and (z.basis * 0.55 / 100) ** 3 * 4095 >= 10
 
 
 def test_grundlicht_bleibt_unter_effekten():

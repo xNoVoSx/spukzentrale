@@ -131,7 +131,8 @@ class KiStimme:
         self.z = z
         self.letzte: collections.deque[str] = collections.deque(maxlen=LETZTE)
         self.sprache: collections.OrderedDict[str, bytes] = collections.OrderedDict()
-        self.laeuft = False
+        self.laeuft = False      # denkt nach/erzeugt den Satz (endet, sobald der Satz verschickt ist)
+        self.spricht_bis = 0.0   # monotonic: bis dahin ist der letzte Satz noch zu hören
         self.abbrechen = False   # z. B. geklingelt, während die KI noch nachdenkt -> nicht mehr sprechen
         self.verlauf: collections.deque[dict] = collections.deque(maxlen=VERLAUF)
         self.letztes_bild: bytes | None = None   # nur im Speicher, für die KI-Zentrale
@@ -294,6 +295,7 @@ class KiStimme:
                     eintrag["ergebnis"], eintrag["grund"] = "abgebrochen", "inzwischen wurde geklingelt"
                     return "abgebrochen"
             await self._abspielen(wav, vol)
+            self.spricht_bis = time.monotonic() + wav_dauer_ms(wav) / 1000
             self.z._hintergrund(self.z.regie.nach_satz(satz, wav_dauer_ms(wav)))
             eintrag["ergebnis"] = "gesagt"
             text = ", ".join(f"{n.capitalize()} {v}" for n, v in zeiten.items())
@@ -310,6 +312,10 @@ class KiStimme:
             self.laeuft = False
             self.verlauf.appendleft(eintrag)
             self._melden({"t": "ki", "laeuft": False, "eintrag": eintrag})
+
+    def spricht(self) -> bool:
+        """Nachdenken oder der letzte Satz ist noch zu hören (+0,3 s Luft) – solange keine zweite Stimme."""
+        return self.laeuft or time.monotonic() < self.spricht_bis + 0.3
 
     def _melden(self, nachricht: dict) -> None:
         self.z.an_ui(nachricht)

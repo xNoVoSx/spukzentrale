@@ -5,7 +5,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from app.besuch import ABSCHIED, LOCKEN, TUER
+from app.besuch import ABSCHIED, LOCKEN, NACH_KLINGEL_S, TUER
 from app.ki import KiStimme
 from app.main import app
 from app.modelle import Ausloeser
@@ -30,6 +30,7 @@ def z(monkeypatch):
         zentrale.gesagt = gesagt
         zentrale.geprueft = 0
         zentrale.besuch.__init__(zentrale)        # sauberer Zustand
+        zentrale.ki.spricht_bis = 0.0
         yield zentrale
 
 
@@ -252,3 +253,34 @@ def test_tuer_hat_vorrang(z):
     asyncio.run(b.sensor(NAH, False, "nah"))                # Tür frei, auf dem Weg jemand (neue Leute)
     asyncio.run(b.takt(time.monotonic()))
     assert z.gesagt[-1] == LOCKEN and b.zustand == "gelockt"
+
+
+def test_keine_zweite_stimme_solange_der_satz_noch_zu_hoeren_ist(z):
+    """Prüfbericht 31.10. nachts (A1): Tür-Satz startete, während der Weg-Satz noch lief."""
+    b = z.besuch
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert z.gesagt == [LOCKEN]
+    z.ki.spricht_bis = time.monotonic() + 3                 # der Weg-Satz läuft noch 3 s
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    assert len(z.gesagt) == 1 and b.ausstehend is not None  # Tür-Satz wartet
+    asyncio.run(b.takt(time.monotonic()))
+    assert len(z.gesagt) == 1
+    z.ki.spricht_bis = time.monotonic() - 1                 # Satz zu Ende: jetzt nachholen
+    asyncio.run(b.takt(time.monotonic()))
+    assert z.gesagt[-1] == TUER and b.tuer_gesagt
+
+
+def test_abschied_kurz_nach_dem_klingeln(z):
+    """Prüfbericht 31.10. nachts: die Leute gehen 10–25 s nach dem Klingeln – der Abschied muss vorher kommen."""
+    b = z.besuch
+    asyncio.run(b.sensor(NAH, True, "nah"))
+    b.klingel()
+    assert z.ki.spricht_bis == 0
+    asyncio.run(b.sensor(NAH, False, "nah"))
+    z._richtung = "geht"
+    _vorspulen(b, NACH_KLINGEL_S - 3)
+    asyncio.run(b.sensor(FERN, True, "fern"))               # zu früh: der Schreck klingt noch
+    assert len(z.gesagt) == 1
+    _vorspulen(b, 4)
+    asyncio.run(b.sensor(FERN, True, "fern"))
+    assert z.gesagt[-1] == LOCKEN and b.zustand == "geht" and b.abschied_gesagt

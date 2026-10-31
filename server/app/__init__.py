@@ -1,3 +1,3 @@
 """Spukzentrale – Server für Halloween-Licht- und Soundeffekte."""
 
-VERSION = "1.14.0"
+VERSION = "1.15.0"

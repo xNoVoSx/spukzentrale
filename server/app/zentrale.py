@@ -831,7 +831,7 @@ class Zentrale:
         if a.typ == "ki" and not self.zustand.ki_an:
             return await self._ki_ersatz(a, quelle)      # KI abgeschaltet: wie ein normaler Auslöser
         if a.typ == "ki":
-            if self.ki.laeuft:
+            if self.ki.spricht():
                 return False
             # läuft im Hintergrund (Bild + Modell + Stimme dauern Sekunden), HA-Verbindung nicht aufhalten
             self._hintergrund(self._ki_ausloesen(a, quelle))
